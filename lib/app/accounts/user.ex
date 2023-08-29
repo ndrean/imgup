@@ -1,4 +1,5 @@
 defmodule App.Accounts.User do
+  @moduledoc false
   use Ecto.Schema
   import Ecto.Changeset
 
@@ -7,6 +8,7 @@ defmodule App.Accounts.User do
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
     field :confirmed_at, :naive_datetime
+    has_many :urls, App.Gallery.Url
 
     timestamps()
   end

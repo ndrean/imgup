@@ -1,14 +1,13 @@
 defmodule AppWeb.ImgupLive do
   use AppWeb, :live_view
-  on_mount AppWeb.UserLiveAuth
+  on_mount AppWeb.UserLiveInit
+  require Logger
+  alias App.Gallery
 
   @impl true
   def mount(_params, _session, socket) do
-    socket.assigns |> dbg()
-
     {:ok,
      socket
-     |> assign(:uploaded_files, [])
      |> allow_upload(:image_list,
        accept: ~w(image/*),
        max_entries: 6,
@@ -65,10 +64,23 @@ defmodule AppWeb.ImgupLive do
 
   @impl true
   def handle_event("save", _params, socket) do
+    current_user = socket.assigns.current_user
+
     uploaded_files =
       consume_uploaded_entries(socket, :image_list, fn %{uploader: _} = meta, _entry ->
         public_url = meta.url <> "/#{meta.key}"
         compressed_url = meta.compressed_url <> "/#{meta.key}"
+
+        file_urls =
+          %{
+            key: meta.key,
+            public_url: public_url,
+            compressed_url: compressed_url,
+            uploader: "S3"
+          }
+
+        {:ok, %Gallery.Url{}} =
+          Gallery.save_file_urls_for(user: current_user, file_urls: file_urls)
 
         meta = Map.put(meta, :public_url, public_url)
         meta = Map.put(meta, :compressed_url, compressed_url)

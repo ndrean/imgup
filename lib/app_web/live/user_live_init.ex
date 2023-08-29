@@ -1,6 +1,8 @@
-defmodule AppWeb.UserLiveAuth do
+defmodule AppWeb.UserLiveInit do
   import Phoenix.LiveView
   import Phoenix.Component
+
+  alias App.{Accounts, Gallery}
   require Logger
 
   @moduledoc """
@@ -14,13 +16,23 @@ defmodule AppWeb.UserLiveAuth do
   def on_mount(:default, _p, %{"user_token" => user_token} = _session, socket) do
     Logger.info("On mount check")
 
-    case App.Accounts.get_user_by_session_token(user_token) do
+    case Accounts.get_user_by_session_token(user_token) do
       nil ->
         Logger.warning("not found on mount")
         {:halt, redirect(socket, to: "/")}
 
       user ->
-        {:cont, assign_new(socket, :current_user, fn -> user end)}
+        socket =
+          socket
+          |> assign_new(:current_user, fn -> user end)
+          |> assign_new(:uploaded_files, fn ->
+            case Gallery.get_urls_by_user(user) |> dbg() do
+              nil -> []
+              list -> list
+            end
+          end)
+
+        {:cont, socket}
     end
   end
 

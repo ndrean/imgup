@@ -54,6 +54,8 @@ using `Phoenix + LiveView`.
     - [9.1 Creating a new LiveView](#91-creating-a-new-liveview)
     - [9.2 Adding our view](#92-adding-our-view)
 - [_Please_ Star the repo! ⭐️](#please-star-the-repo-️)
+  - [Generate authentication with One-Tap](#generate-authentication-with-one-tap)
+  - [Join table](#join-table)
 
 <br />
 
@@ -3105,3 +3107,13 @@ If you find this package/repo useful,
 please star on GitHub, so that we know! ⭐
 
 Thank you! 🙏
+
+## Generate authentication with One-Tap
+
+TODO
+
+## Join table
+
+```bash
+mix phx.gen.schema Gallery urls url:string transformed_url:string
+```
