@@ -24,15 +24,17 @@ defmodule AppWeb.UserLiveInit do
     current_user = socket.assigns.current_user
 
     cond do
-      current_user == nil ->
-        Logger.warning("No user found or confirmed")
+      is_current_user_nil(current_user) ->
+        Logger.warning("No user found")
 
         {:halt,
          socket
          |> put_flash(:error, "You must confirm your account")
          |> redirect(to: "/")}
 
-      current_user.confirmed_at == nil ->
+      is_not_confirmed_current_user(current_user) ->
+        Logger.warning("User not confirmed")
+
         {:halt,
          socket
          |> put_flash(:error, "You must confirm your account")
@@ -41,10 +43,7 @@ defmodule AppWeb.UserLiveInit do
       true ->
         socket =
           assign_new(socket, :uploaded_files, fn ->
-            case Gallery.get_urls_by_user(current_user) do
-              nil -> []
-              list -> list
-            end
+            get_uploads(current_user)
           end)
 
         {:cont, socket}
@@ -58,5 +57,15 @@ defmodule AppWeb.UserLiveInit do
      socket
      |> put_flash(:error, "You must be logged in")
      |> redirect(to: "/")}
+  end
+
+  defp is_current_user_nil(user), do: user == nil
+  defp is_not_confirmed_current_user(user), do: user.confirmed_at == nil
+
+  defp get_uploads(user) do
+    case Gallery.get_urls_by_user(user) do
+      nil -> []
+      list -> list
+    end
   end
 end
