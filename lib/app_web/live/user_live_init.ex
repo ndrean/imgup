@@ -18,10 +18,10 @@ defmodule AppWeb.UserLiveInit do
 
     socket =
       assign_new(socket, :current_user, fn ->
-        Accounts.get_user_by_session_token(user_token)
+        Accounts.get_user_by_session_token(user_token) |> dbg()
       end)
 
-    case socket.assigns.current_user.inserted_at do
+    case socket.assigns.current_user.confirmed_at do
       nil ->
         Logger.warning("No user found or confirmed")
 
