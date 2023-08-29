@@ -47,6 +47,7 @@ defmodule AppWeb.UserLoginLive do
             <div
               phx-update="ignore"
               id="g_id_onload"
+              data-use_fedcm_for_prompt="true"
               data-auto_prompt="true"
               data-client_id={App.g_client_id()}
               data-context="signin"
@@ -66,7 +67,7 @@ defmodule AppWeb.UserLoginLive do
               data-text="signin_with"
               data-size="large"
               data-logo_alignment="left"
-              data-width="300"
+              data-width="350"
             >
             </div>
           </div>
