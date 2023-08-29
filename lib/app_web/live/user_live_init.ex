@@ -14,15 +14,17 @@ defmodule AppWeb.UserLiveInit do
   # end
 
   def on_mount(:default, _p, %{"user_token" => user_token} = _session, socket) do
-    Logger.info("On mount check")
+    Logger.info("On mount check #{inspect(user_token)}")
 
     socket =
       assign_new(socket, :current_user, fn ->
-        Accounts.get_user_by_session_token(user_token) |> dbg()
+        Accounts.get_user_by_session_token(user_token)
       end)
 
-    case socket.assigns.current_user.confirmed_at do
-      nil ->
+    current_user = socket.assigns.current_user
+
+    cond do
+      current_user == nil ->
         Logger.warning("No user found or confirmed")
 
         {:halt,
@@ -30,9 +32,13 @@ defmodule AppWeb.UserLiveInit do
          |> put_flash(:error, "You must confirm your account")
          |> redirect(to: "/")}
 
-      _ ->
-        current_user = socket.assigns.current_user
+      current_user.confirmed_at == nil ->
+        {:halt,
+         socket
+         |> put_flash(:error, "You must confirm your account")
+         |> redirect(to: "/")}
 
+      true ->
         socket =
           assign_new(socket, :uploaded_files, fn ->
             case Gallery.get_urls_by_user(current_user) do
