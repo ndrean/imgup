@@ -1,10 +1,14 @@
 defmodule AppWeb.ImgupLive do
   use AppWeb, :live_view
+  on_mount AppWeb.UserLiveAuth
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(_params, session, socket) do
+    session |> dbg()
+
     {:ok,
      socket
+     #  |> assign(:g_src_nonce, session["g_nonce"])
      |> assign(:uploaded_files, [])
      |> allow_upload(:image_list,
        accept: ~w(image/*),

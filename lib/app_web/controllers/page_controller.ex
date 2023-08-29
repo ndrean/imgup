@@ -11,9 +11,20 @@ defmodule AppWeb.PageController do
         "cannot be run until all required environment variables are set"
       end
 
+    g_nonce = App.gen_secret()
+    # for SignIn
+    g_state = App.gen_secret()
+
     # The home page is often custom made,
     # so skip the default app layout.
-    render(conn, :home, layout: false, env: check_env(@env_required), init: init)
+    conn
+    |> fetch_session()
+    |> put_session(:g_state, g_state)
+    |> put_session(:g_nonce, g_nonce)
+    # |> assign(:g_client_id, System.get_env("GOOGLE_CLIENT_ID"))
+    |> assign(:g_src_nonce, g_nonce)
+    |> assign(:g_client_id, App.g_client_id())
+    |> render(:home, layout: false, env: check_env(@env_required), init: init)
   end
 
   defp check_env(keys) do

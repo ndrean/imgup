@@ -10,6 +10,9 @@ import Config
 config :app,
   ecto_repos: [App.Repo]
 
+config :app,
+  g_cb_uri: "/users/one_tap"
+
 # Configures the endpoint
 config :app, AppWeb.Endpoint,
   url: [host: "localhost"],
@@ -50,6 +53,8 @@ config :logger, :console,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+config :app, App.Mailer, adapter: Swoosh.Adapters.Local
+# config :swoosh, :api_client, false
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
