@@ -28,6 +28,7 @@ defmodule App.DataCase do
   end
 
   setup tags do
+    :ok = Ecto.Adapters.SQL.Sandbox.checkout(App.Repo)
     App.DataCase.setup_sandbox(tags)
     :ok
   end

@@ -9,8 +9,6 @@ defmodule ElixirGoogleCerts do
 
   @json_lib Phoenix.json_library()
 
-  # Application.compile_env(:phoenix, :json_library)
-
   @doc """
   This is run after the plug "check_csrf".
 
@@ -19,13 +17,18 @@ defmodule ElixirGoogleCerts do
   against Google public key (PEM or JWK).
 
 
-        ElixirGoogleCerts.verfified_identity(%{n
-          once: emitted_nonce,
-          jwt: received_jwt
-        })
+  ## Example
+
+      ```
+      ElixirGoogleCerts.verfified_identity(%{
+        nonce: given_nonce,
+        jwt: received_jwt
+      })
+    ```
 
   It returns `{:ok, profil}` or `{:error, reason}`.
   """
+
   def verified_identity(%{jwt: jwt, g_nonce: g_nonce}) do
     with {:ok,
           %{

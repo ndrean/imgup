@@ -3115,5 +3115,5 @@ TODO
 ## Join table
 
 ```bash
-mix phx.gen.schema Gallery urls url:string transformed_url:string
+mix phx.gen.schema Gallery urls public_url:string compressed_url:string key:string
 ```

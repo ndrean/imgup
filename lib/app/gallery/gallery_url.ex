@@ -1,5 +1,7 @@
 defmodule App.Gallery.Url do
-  @moduledoc false
+  @moduledoc """
+  The schema of the table "urls". A record contains two URL, and a reference to the user_id.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 

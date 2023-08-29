@@ -63,6 +63,7 @@ defmodule App.MixProject do
       {:tailwind, "~> 0.2.0", runtime: Mix.env() == :dev},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.11.1", only: [:dev]},
+      {:ecto_erd, "~> 0.5.1", only: [:dev]},
 
       # Cid
       {:excid, "~> 1.0.1"},
