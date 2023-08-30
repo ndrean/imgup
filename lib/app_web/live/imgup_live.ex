@@ -84,6 +84,7 @@ defmodule AppWeb.ImgupLive do
 
         meta = Map.put(meta, :public_url, public_url)
         meta = Map.put(meta, :compressed_url, compressed_url)
+        meta |> dbg()
 
         {:ok, meta}
       end)

@@ -40,6 +40,7 @@ defmodule AppWeb.UserLoginLive do
           <bold>One-Tap</bold>
         </p>
         <br />
+        <%!-- data-use_fedcm_for_prompt="true"  : the "nonce" will not work anymore with this--%>
         <div>
           <script src="https://accounts.google.com/gsi/client" async defer>
           </script>
@@ -47,13 +48,13 @@ defmodule AppWeb.UserLoginLive do
             <div
               phx-update="ignore"
               id="g_id_onload"
-              data-use_fedcm_for_prompt="true"
               data-auto_prompt="true"
               data-client_id={App.g_client_id()}
               data-context="signin"
               data-ux_mode="popup"
               data-login_uri={App.g_cb_url()}
               data-nonce={@g_src_nonce}
+              data-itp_support="true"
             >
             </div>
 

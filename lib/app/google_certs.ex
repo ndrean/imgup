@@ -4,7 +4,6 @@ defmodule ElixirGoogleCerts do
   """
 
   @g_certs1_url "https://www.googleapis.com/oauth2/v1/certs"
-  @g_certs3_url "https://www.googleapis.com/oauth2/v3/certs"
   @iss "https://accounts.google.com"
 
   @json_lib Phoenix.json_library()
@@ -26,7 +25,7 @@ defmodule ElixirGoogleCerts do
       })
     ```
 
-  It returns `{:ok, profil}` or `{:error, reason}`.
+  It returns `{:ok, profile}` or `{:error, reason}`.
   """
 
   def verified_identity(%{jwt: jwt, g_nonce: g_nonce}) do
@@ -67,22 +66,7 @@ defmodule ElixirGoogleCerts do
     end
   end
 
-  @doc """
-  Uses the Google Public key JWK. Takes the JWT and returns `{:ok, profile}` or `{:error, reason}`
-  """
-  def check_identity_v3(jwt) do
-    with {:ok, %{"kid" => kid, "alg" => alg}} <- Joken.peek_header(jwt),
-         {:ok, %{body: body}} <- fetch(@g_certs3_url) do
-      %{"keys" => certs} = @json_lib.decode!(body)
-      cert = Enum.find(certs, fn cert -> cert["kid"] == kid end)
-      signer = Joken.Signer.create(alg, cert)
-      Joken.verify(jwt, signer, [])
-    else
-      {:error, reason} -> {:error, inspect(reason)}
-    end
-  end
-
-  # decouple from HTTP client
+  # no specific HTTP client
   defp fetch(url) do
     case :httpc.request(:get, {~c"#{url}", []}, [], []) do
       {:ok, {{_version, 200, _}, _headers, body}} ->
