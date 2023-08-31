@@ -87,10 +87,10 @@ defmodule AppWeb.ImgupLive do
     t = Task.async(fn -> save_file_urls(uploaded_files, current_user) end)
 
     case Task.await(t) do
-      {:error, _} ->
+      {:error, msg} ->
         {:noreply,
          socket
-         |> put_flash(:error, "Something went wrong")
+         |> put_flash(:error, "Something went wrong: #{inspect(msg)}")
          |> update(:uploaded_files, &(&1 ++ uploaded_files))}
 
       {:ok, _} ->
@@ -114,8 +114,8 @@ defmodule AppWeb.ImgupLive do
     Url.changeset(%{
       key: file.key,
       public_url: file.public_url,
-      compressed_url: file.compressed_url,
-      user_id: user.id
+      compressed_url: file.compressed_url
+      # user_id: user.id
     })
   end
 
@@ -125,8 +125,6 @@ defmodule AppWeb.ImgupLive do
   """
   def validate_changesets(list_changesets) do
     Enum.all?(list_changesets, & &1.valid?)
-    # list_changesets
-    # |> Enum.reduce(true, fn changeset, acc -> acc && changeset.valid? end)
   end
 
   @doc """
@@ -150,7 +148,8 @@ defmodule AppWeb.ImgupLive do
         |> App.Repo.transaction()
 
       false ->
-        {:error, :invalid_changeset}
+        err = Enum.find(changesets, &(&1.valid? == false)).errors
+        {:error, inspect(err)}
     end
   end
 
