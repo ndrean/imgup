@@ -61,11 +61,6 @@ let csrfToken = document
 let liveSocket = new LiveSocket("/live", Socket, {
   uploaders: Uploaders,
   params: { _csrf_token: csrfToken },
-  // dom: {
-  //   onBeforeElUpdated(from, to) {
-  //     console.log({ to }, { from });
-  //   },
-  // },
 });
 
 // Show progress bar on live navigation and form submits

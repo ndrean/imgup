@@ -8,6 +8,8 @@ defmodule AppWeb.ImgupLive do
   def mount(_params, _session, socket) do
     {:ok,
      socket
+     |> assign(:new_file, "")
+     |> assign(:show_modal, false)
      |> allow_upload(:image_list,
        accept: ~w(image/*),
        max_entries: 6,
@@ -39,18 +41,24 @@ defmodule AppWeb.ImgupLive do
         expires_in: :timer.hours(1)
       )
 
-    meta = %{
-      uploader: "S3",
-      key: key,
-      url: "https://#{bucket_original}.s3-#{config.region}.amazonaws.com",
-      compressed_url: "https://#{bucket_compressed}.s3-#{config.region}.amazonaws.com",
-      fields: fields
-    }
+    meta =
+      %{
+        uploader: "S3",
+        key: key,
+        url: "https://#{bucket_original}.s3-#{config.region}.amazonaws.com",
+        compressed_url: "https://#{bucket_compressed}.s3-#{config.region}.amazonaws.com",
+        fields: fields
+      }
 
     {:ok, meta, socket}
   end
 
+
   # Event handlers -------
+  @impl true
+  def handle_params(_unsigned_params, _uri, socket) do
+    {:noreply, socket}
+  end
 
   @impl true
   def handle_event("validate", _params, socket) do
@@ -71,6 +79,7 @@ defmodule AppWeb.ImgupLive do
         public_url = meta.url <> "/#{meta.key}"
         compressed_url = meta.compressed_url <> "/#{meta.key}"
 
+        # <-- added
         file_urls =
           %{
             key: meta.key,
@@ -82,15 +91,23 @@ defmodule AppWeb.ImgupLive do
         {:ok, %Gallery.Url{}} =
           Gallery.save_file_urls_for(user: current_user, file_urls: file_urls)
 
+        # --> end
+
         meta = Map.put(meta, :public_url, public_url)
         meta = Map.put(meta, :compressed_url, compressed_url)
-        meta |> dbg()
 
         {:ok, meta}
       end)
 
     {:noreply, update(socket, :uploaded_files, &(&1 ++ uploaded_files))}
   end
+
+  # @impl true
+  # def handle_event("open-modal", %{"key" => key} = p, socket) do
+  #   p |> dbg()
+  #   IO.puts("clicked__________#{!socket.assigns.show_modal}")
+  #   {:noreply, update(socket, :show_modal, &(!&1))}
+  # end
 
   # View utilities -------
 

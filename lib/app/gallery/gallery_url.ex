@@ -19,5 +19,6 @@ defmodule App.Gallery.Url do
     gallery
     |> cast(attrs, [:public_url, :compressed_url, :key, :user_id])
     |> validate_required([:key, :public_url, :user_id])
+    |> unique_constraint(:public_url, name: :urls_public_url_user_id_index)
   end
 end

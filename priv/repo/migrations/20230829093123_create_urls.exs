@@ -11,6 +11,6 @@ defmodule App.Repo.Migrations.CreateUrls do
       timestamps()
     end
 
-    create unique_index(:urls, [:public_url, :user_id])
+    create unique_index(:urls, [:public_url, :user_id], name: :urls_public_url_user_id_index)
   end
 end
