@@ -53,7 +53,6 @@ defmodule AppWeb.ImgupLive do
     {:ok, meta, socket}
   end
 
-
   # Event handlers -------
   @impl true
   def handle_params(_unsigned_params, _uri, socket) do
@@ -101,13 +100,6 @@ defmodule AppWeb.ImgupLive do
 
     {:noreply, update(socket, :uploaded_files, &(&1 ++ uploaded_files))}
   end
-
-  # @impl true
-  # def handle_event("open-modal", %{"key" => key} = p, socket) do
-  #   p |> dbg()
-  #   IO.puts("clicked__________#{!socket.assigns.show_modal}")
-  #   {:noreply, update(socket, :show_modal, &(!&1))}
-  # end
 
   # View utilities -------
 
