@@ -103,25 +103,40 @@ defmodule AppWeb.ImgupLive do
 
   # View utilities -------
 
-  defp uploads_changesets(uploaded_files, user) do
-    uploaded_files
-    |> Enum.map(fn file ->
-      Url.changeset(%{
-        key: file.key,
-        public_url: file.public_url,
-        compressed_url: file.compressed_url,
-        user_id: user.id
-      })
-    end)
+  @doc """
+  Return a list of %App.Gallery.Url{} changeset struct based on the files received and the current_user.
+  """
+  def uploads_changesets(uploaded_files, user) do
+    Enum.map(uploaded_files, &file_to_changeset(&1, user))
+  end
+
+  defp file_to_changeset(file, user) do
+    Url.changeset(%{
+      key: file.key,
+      public_url: file.public_url,
+      compressed_url: file.compressed_url,
+      user_id: user.id
+    })
   end
 
   @spec validate_changesets(any) :: any
+  @doc """
+  Accumulate the `changeset.valid?` by adding the boolean result to get a boolean result.
+  """
   def validate_changesets(list_changesets) do
-    list_changesets
-    |> Enum.reduce(true, fn changeset, acc -> acc && changeset.valid? end)
+    Enum.all?(list_changesets, & &1.valid?)
+    # list_changesets
+    # |> Enum.reduce(true, fn changeset, acc -> acc && changeset.valid? end)
   end
 
-  defp save_file_urls(uploaded_files, current_user) do
+  @doc """
+  Receives the uploaded_files and the current_user.
+
+  Produces an insertion of the association user/urls into the database.
+
+  Returns a tuple `{:ok, _}` or `{}:error, _}`
+  """
+  def save_file_urls(uploaded_files, current_user) do
     changesets =
       uploads_changesets(uploaded_files, current_user)
 
