@@ -84,9 +84,7 @@ defmodule AppWeb.ImgupLive do
         {:ok, meta}
       end)
 
-    t = Task.async(fn -> save_file_urls(uploaded_files, current_user) end)
-
-    case Task.await(t) do
+    case save_file_urls(uploaded_files, current_user) do
       {:error, msg} ->
         {:noreply,
          socket
@@ -114,16 +112,15 @@ defmodule AppWeb.ImgupLive do
     Url.changeset(%{
       key: file.key,
       public_url: file.public_url,
-      compressed_url: file.compressed_url
-      # user_id: user.id
+      compressed_url: file.compressed_url,
+      user_id: user.id
     })
   end
 
-  @spec validate_changesets(any) :: any
   @doc """
   Accumulate the `changeset.valid?` by adding the boolean result to get a boolean result.
   """
-  def validate_changesets(list_changesets) do
+  def validate_changesets?(list_changesets) do
     Enum.all?(list_changesets, & &1.valid?)
   end
 
@@ -138,7 +135,7 @@ defmodule AppWeb.ImgupLive do
     changesets =
       uploads_changesets(uploaded_files, current_user)
 
-    case validate_changesets(changesets) do
+    case validate_changesets?(changesets) do
       true ->
         Ecto.Multi.new()
         |> Ecto.Multi.run(:build, fn repo, _change ->
