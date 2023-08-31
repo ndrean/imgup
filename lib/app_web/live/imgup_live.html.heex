@@ -194,6 +194,7 @@
                 <.button phx-click={show_modal("modal-#{file.key}")}>
                   More actions
                 </.button>
+                <%= file.key %>
                 <.modal id={"modal-#{file.key}"} on_cancel={hide_modal("modal-#{file.key}")}>
                   <.live_component id={file.key} module={AppWeb.ModalForm} file={file} />
                 </.modal>

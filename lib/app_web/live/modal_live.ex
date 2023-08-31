@@ -76,7 +76,10 @@ defmodule AppWeb.ModalForm do
 
   defp save_named_file_to_private_dir(name: name, data: data, extension: extension) do
     name =
-      Application.app_dir(:app, "priv/static/image_uploads") <> "/" <> name <> "." <> extension
+      Path.join([:code.priv_dir(:app), "static", "image_uploads", "#{name}.#{extension}"])
+
+    # name =
+    #   Application.app_dir(:app, "priv/static/image_uploads") <> "/" <> name <> "." <> extension
 
     File.write(name, data)
   end

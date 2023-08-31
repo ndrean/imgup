@@ -4,6 +4,7 @@ defmodule App.Gallery.Url do
   """
   use Ecto.Schema
   import Ecto.Changeset
+  alias App.Gallery.Url
 
   schema "urls" do
     field :public_url, :string
@@ -15,8 +16,8 @@ defmodule App.Gallery.Url do
   end
 
   @doc false
-  def changeset(gallery, attrs) do
-    gallery
+  def changeset(attrs) do
+    %Url{}
     |> cast(attrs, [:public_url, :compressed_url, :key, :user_id])
     |> validate_required([:key, :public_url, :user_id])
     |> unique_constraint(:public_url, name: :urls_public_url_user_id_index)

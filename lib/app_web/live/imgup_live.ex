@@ -2,7 +2,7 @@ defmodule AppWeb.ImgupLive do
   use AppWeb, :live_view
   on_mount AppWeb.UserLiveInit
   require Logger
-  alias App.Gallery
+  alias App.Gallery.Url
 
   @impl true
   def mount(_params, _session, socket) do
@@ -78,30 +78,66 @@ defmodule AppWeb.ImgupLive do
         public_url = meta.url <> "/#{meta.key}"
         compressed_url = meta.compressed_url <> "/#{meta.key}"
 
-        # <-- added
-        file_urls =
-          %{
-            key: meta.key,
-            public_url: public_url,
-            compressed_url: compressed_url,
-            uploader: "S3"
-          }
-
-        {:ok, %Gallery.Url{}} =
-          Gallery.save_file_urls_for(user: current_user, file_urls: file_urls)
-
-        # --> end
-
         meta = Map.put(meta, :public_url, public_url)
         meta = Map.put(meta, :compressed_url, compressed_url)
 
         {:ok, meta}
       end)
 
-    {:noreply, update(socket, :uploaded_files, &(&1 ++ uploaded_files))}
+    t = Task.async(fn -> save_file_urls(uploaded_files, current_user) end)
+
+    case Task.await(t) do
+      {:error, _} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Something went wrong")
+         |> update(:uploaded_files, &(&1 ++ uploaded_files))}
+
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Success in uploading")
+         |> update(:uploaded_files, &(&1 ++ uploaded_files))}
+    end
   end
 
   # View utilities -------
+
+  defp uploads_changesets(uploaded_files, user) do
+    uploaded_files
+    |> Enum.map(fn file ->
+      Url.changeset(%{
+        key: file.key,
+        public_url: file.public_url,
+        compressed_url: file.compressed_url,
+        user_id: user.id
+      })
+    end)
+  end
+
+  @spec validate_changesets(any) :: any
+  def validate_changesets(list_changesets) do
+    list_changesets
+    |> Enum.reduce(true, fn changeset, acc -> acc && changeset.valid? end)
+  end
+
+  defp save_file_urls(uploaded_files, current_user) do
+    changesets =
+      uploads_changesets(uploaded_files, current_user)
+
+    case validate_changesets(changesets) do
+      true ->
+        Ecto.Multi.new()
+        |> Ecto.Multi.run(:build, fn repo, _change ->
+          Enum.each(changesets, &repo.insert(&1))
+          {:ok, :done}
+        end)
+        |> App.Repo.transaction()
+
+      false ->
+        {:error, :invalid_changeset}
+    end
+  end
 
   def are_files_uploadable?(image_list) do
     error_list = Map.get(image_list, :errors)
