@@ -80,11 +80,14 @@ defmodule AppWeb.ModalForm do
          |> assign(:form_dwld, to_form(Input.create_changeset(input)))}
 
       false ->
-        changeset.errors |> dbg()
+        err_msg =
+          Ecto.Changeset.traverse_errors(changeset, &translate_error/1)
+          |> Map.get(:name)
+          |> hd()
 
         {:noreply,
          socket
-         |> App.send_flash!(:error, inspect(changeset.errors))
+         |> App.send_flash!(:error, err_msg)
          |> assign(:form_dwld, to_form(Input.create_changeset(input)))}
     end
   end
