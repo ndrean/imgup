@@ -99,6 +99,12 @@ defmodule AppWeb.ImgupLive do
     end
   end
 
+  # handle the flash messages sent from children live_components
+  @impl true
+  def handle_info({:child_flash, type, msg}, socket) do
+    {:noreply, put_flash(socket, type, inspect(msg))}
+  end
+
   # View utilities -------
 
   @doc """

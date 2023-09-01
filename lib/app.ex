@@ -11,25 +11,18 @@ defmodule App do
     Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
   end
 
-  def g_client_id(), do: System.get_env("GOOGLE_CLIENT_ID")
-  def hostname(), do: AppWeb.Endpoint.url()
+  def g_client_id, do: System.get_env("GOOGLE_CLIENT_ID")
+  def hostname, do: AppWeb.Endpoint.url()
 
-  def g_cb_url() do
+  def g_cb_url do
     Path.join(
       hostname(),
       Application.get_application(__MODULE__) |> Application.get_env(:g_cb_uri)
     )
   end
 
-  # def hostname() do
-  #   :app
-  #   |> Application.fetch_env!(AppWeb.Endpoint)
-  #   |> Keyword.fetch!(:url)
-  #   |> Enum.into(%{})
-  #   |> then(fn map ->
-  #     struct(URI.new!(""), map)
-  #     |> URI.to_string()
-  #   end)
-  #   |> dbg()
-  # end
+  def send_flash!(socket, type, message) do
+    send(self(), {:child_flash, type, message})
+    socket
+  end
 end

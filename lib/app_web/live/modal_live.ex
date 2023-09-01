@@ -4,6 +4,7 @@ defmodule AppWeb.ModalForm do
   It displays the "compressed link" and a form to assign a name to file the user wants to download from S3.
   """
   use AppWeb, :live_component
+  require Logger
 
   @impl true
   def render(assigns) do
@@ -55,32 +56,42 @@ defmodule AppWeb.ModalForm do
   end
 
   # setting the name for the file that is going to be saved. !! extension is set as ".png".
+  # !! flash messages are only rendered by parent Livevewi -> `send_flash!`
   @impl true
   def handle_event("download", %{"name" => name, "key" => key}, socket) do
-    bucket = Application.get_env(:ex_aws, :original_bucket)
+    bucket = bucket()
+    dest = build_dest(name, "png")
 
-    new_file = get_binary_from_s3_bucket(bucket, key)
-    :ok = save_named_file_to_private_dir(name: name, data: new_file, extension: "png")
-    {:noreply, reset_form(socket)}
+    request =
+      ExAws.S3.download_file(bucket, key, dest)
+      |> ExAws.request()
+
+    case request do
+      {:ok, :done} ->
+        {:noreply,
+         socket
+         |> App.send_flash!(:info, "Success, file saved locally")
+         |> reset_form()}
+
+      {:error, msg} ->
+        Logger.warning(inspect(msg))
+
+        {:noreply,
+         socket
+         |> App.send_flash!(:error, "An error occured when saving: #{inspect(msg)}")
+         |> reset_form()}
+    end
   end
 
   defp reset_form(socket) do
     assign(socket, :form_dwld, to_form(%{}))
   end
 
-  defp get_binary_from_s3_bucket(bucket, key) do
-    ExAws.S3.get_object(bucket, key)
-    |> ExAws.request!()
-    |> Map.get(:body)
+  defp build_dest(name, extension) do
+    Path.join([:code.priv_dir(:app), "static", "image_uploads", "#{name}.#{extension}"])
   end
 
-  defp save_named_file_to_private_dir(name: name, data: data, extension: extension) do
-    name =
-      Path.join([:code.priv_dir(:app), "static", "image_uploads", "#{name}.#{extension}"])
-
-    # name =
-    #   Application.app_dir(:app, "priv/static/image_uploads") <> "/" <> name <> "." <> extension
-
-    File.write(name, data)
+  defp bucket do
+    Application.get_env(:ex_aws, :original_bucket)
   end
 end
