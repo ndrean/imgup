@@ -172,28 +172,27 @@
                 Try to load the compressed image from S3. This is because the compression might take some time, so we retry until it's available
                 See https://stackoverflow.com/questions/19673254/js-jquery-retry-img-load-after-1-second.
                 -->
-              <img
-                class="block max-w-12 max-h-12 w-auto h-auto flex-none bg-gray-50"
-                src={file.compressed_url}
-                onerror="imgError(this);"
-              />
-              <div class="min-w-0 flex-auto">
-                <p>
-                  <span class="text-sm font-semibold leading-6 break-all text-gray-900">
-                    Original URL:
-                  </span>
-                  <a
-                    class="text-sm leading-6 break-all underline text-indigo-600"
-                    href={file.public_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <%= file.public_url %>
-                  </a>
-                </p>
-                <.button phx-click={show_modal("modal-#{file.key}")}>
-                  More actions
+              <div class="min-w-0 flex">
+                <span class="text-sm font-semibold leading-6 break-all text-gray-900"></span>
+                <a
+                  class="text-sm leading-6 break-all underline text-indigo-600 relative"
+                  href={file.public_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img
+                    class="block max-w-12 max-h-12 w-auto h-auto flex-none bg-gray-50"
+                    src={file.compressed_url}
+                    onerror="imgError(this);"
+                  />
+                </a>
+                <.button
+                  phx-click={show_modal("modal-#{file.key}")}
+                  class="text-xs absolute right-1 bottom-1"
+                >
+                  More
                 </.button>
+
                 <.modal id={"modal-#{file.key}"} on_cancel={hide_modal("modal-#{file.key}")}>
                   <.live_component id={file.key} module={AppWeb.ModalForm} file={file} />
                 </.modal>

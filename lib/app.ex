@@ -29,4 +29,9 @@ defmodule App do
     send(self(), {:child_flash, type, message})
     socket
   end
+
+  def clear_flash!(socket) do
+    send(self(), :clear_flash)
+    socket
+  end
 end

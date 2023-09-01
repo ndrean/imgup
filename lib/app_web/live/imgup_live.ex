@@ -9,7 +9,6 @@ defmodule AppWeb.ImgupLive do
     {:ok,
      socket
      |> assign(:new_file, "")
-     |> assign(:show_modal, false)
      |> allow_upload(:image_list,
        accept: ~w(image/*),
        max_entries: 6,
@@ -103,6 +102,10 @@ defmodule AppWeb.ImgupLive do
   @impl true
   def handle_info({:child_flash, type, msg}, socket) do
     {:noreply, put_flash(socket, type, inspect(msg))}
+  end
+
+  def handle_info(:clear_flash, socket) do
+    {:noreply, clear_flash(socket)}
   end
 
   # View utilities -------

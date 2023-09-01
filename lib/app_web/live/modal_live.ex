@@ -1,9 +1,30 @@
+defmodule AppWeb.Input do
+  @moduledoc """
+  Embedded schema to validate the input of the modal form
+  """
+  use Ecto.Schema
+  import Ecto.Changeset
+  alias AppWeb.Input
+
+  embedded_schema do
+    field :name, :string
+  end
+
+  def create_changeset(attrs \\ %{}) do
+    %Input{}
+    |> cast(attrs, [:name])
+    |> validate_length(:name, min: 3)
+    |> validate_required([:name])
+  end
+end
+
 defmodule AppWeb.ModalForm do
   @moduledoc """
   LiveComponent rendered in the modal.
   It displays the "compressed link" and a form to assign a name to file the user wants to download from S3.
   """
   use AppWeb, :live_component
+  alias AppWeb.Input
   require Logger
 
   @impl true
@@ -42,12 +63,30 @@ defmodule AppWeb.ModalForm do
 
   @impl true
   def mount(socket) do
-    {:ok, assign(socket, :form_dwld, to_form(%{"name" => ""}))}
+    init_input = %{"name" => ""}
+    {:ok, assign(socket, :form_dwld, to_form(Input.create_changeset(init_input)))}
+    # {:ok, assign(socket, :form_dwld, to_form(%{"name" => ""}))}
   end
 
   @impl true
-  def handle_event("change", %{"name" => name}, socket) do
-    {:noreply, assign(socket, :form_dwld, to_form(%{"name" => name}))}
+  def handle_event("change", %{"input" => input, "key" => _key}, socket) do
+    changeset = Input.create_changeset(input)
+
+    case changeset.valid? do
+      true ->
+        {:noreply,
+         socket
+         |> App.clear_flash!()
+         |> assign(:form_dwld, to_form(Input.create_changeset(input)))}
+
+      false ->
+        changeset.errors |> dbg()
+
+        {:noreply,
+         socket
+         |> App.send_flash!(:error, inspect(changeset.errors))
+         |> assign(:form_dwld, to_form(Input.create_changeset(input)))}
+    end
   end
 
   @impl true
@@ -58,33 +97,46 @@ defmodule AppWeb.ModalForm do
   # setting the name for the file that is going to be saved. !! extension is set as ".png".
   # !! flash messages are only rendered by parent Livevewi -> `send_flash!`
   @impl true
-  def handle_event("download", %{"name" => name, "key" => key}, socket) do
+  def handle_event("download", %{"input" => %{"name" => name}, "key" => key}, socket) do
     bucket = bucket()
     dest = build_dest(name, "png")
 
+    changeset = Input.create_changeset(%{"name" => name})
+
     request =
-      ExAws.S3.download_file(bucket, key, dest)
-      |> ExAws.request()
+      case changeset.valid? do
+        true ->
+          ExAws.S3.download_file(bucket, key, dest)
+          |> ExAws.request()
+
+        false ->
+          :error
+      end
 
     case request do
       {:ok, :done} ->
         {:noreply,
          socket
+         |> App.clear_flash!()
          |> App.send_flash!(:info, "Success, file saved locally")
          |> reset_form()}
+
+      :error ->
+        {:noreply, socket}
 
       {:error, msg} ->
         Logger.warning(inspect(msg))
 
         {:noreply,
          socket
+         |> App.clear_flash!()
          |> App.send_flash!(:error, "An error occured when saving: #{inspect(msg)}")
          |> reset_form()}
     end
   end
 
   defp reset_form(socket) do
-    assign(socket, :form_dwld, to_form(%{}))
+    assign(socket, :form_dwld, to_form(Input.create_changeset(%{})))
   end
 
   defp build_dest(name, extension) do
