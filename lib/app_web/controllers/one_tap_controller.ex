@@ -52,9 +52,9 @@ defmodule AppWeb.OneTapController do
          user = %User{} <- Accounts.get_user_by_email(email) do
       conn
       |> fetch_session()
-      |> fetch_flash()
-      |> put_flash(:info, "Welcome back!")
-      |> put_session(:origin, "google_one_tap")
+      # |> fetch_flash()
+      # |> put_flash(:info, "Welcome back!")
+      # |> put_session(:origin, "google_one_tap")
       |> UserAuth.log_in_user(user)
     else
       nil ->

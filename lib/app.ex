@@ -21,6 +21,10 @@ defmodule App do
     )
   end
 
+  @doc """
+  Sends a message to the parent LiveView to render a flash message.
+  You must implement a `handle_info({:child_flash, type, msg}, socket)`in the parent LiveView
+  """
   def send_flash!(socket, type, message) do
     send(self(), {:child_flash, type, message})
     socket
