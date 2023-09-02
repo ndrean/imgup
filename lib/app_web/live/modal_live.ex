@@ -104,7 +104,7 @@ defmodule AppWeb.ModalForm do
         {:noreply, App.send_flash!(socket, :error, "Object not found in the bucket")}
 
       _ ->
-        # run in a Task to ensure that S3 returns a response before the next check
+        # runs deletion in a Task to ensure that S3 returns a response before the next check
         Task.async(fn -> ExAws.S3.delete_object(bucket, key) |> ExAws.request() end)
         |> Task.await()
 
@@ -112,7 +112,6 @@ defmodule AppWeb.ModalForm do
         # the database and LV state accordingly.
         case check_if_exists_in_bucket(bucket, key) do
           nil ->
-            Logger.info("Object deleted")
             send(self(), {:delete, key})
             {:noreply, socket}
 
@@ -128,7 +127,7 @@ defmodule AppWeb.ModalForm do
     {:noreply, socket}
   end
 
-  # setting the name for the file that is going to be saved. !! extension is set as ".png".
+  # extension if reset as the original file.
   # !! flash messages are only rendered by parent Livevewi -> `send_flash!`
   @impl true
   def handle_event(

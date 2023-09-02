@@ -160,7 +160,7 @@ defmodule AppWeb.ImgupLive do
   end
 
   @doc """
-  Accumulate the `changeset.valid?` by adding the boolean result to get a boolean result.
+  Checks if all changesets are valid. Returns true/false.
   """
   def validate_changesets?(list_changesets) do
     Enum.all?(list_changesets, & &1.valid?)
