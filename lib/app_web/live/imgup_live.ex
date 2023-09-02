@@ -110,6 +110,36 @@ defmodule AppWeb.ImgupLive do
     {:noreply, clear_flash(socket)}
   end
 
+  def handle_info({:delete, key}, socket) do
+    res =
+      App.Repo.transaction(fn repo ->
+        data = repo.get_by(App.Gallery.Url, %{key: key})
+
+        case data do
+          nil ->
+            {:error, :not_found_in_database}
+
+          data ->
+            repo.delete(data)
+        end
+      end)
+
+    case res do
+      {:ok, {:error, msg}} ->
+        Logger.warning(inspect(msg))
+
+        {:noreply,
+         socket
+         |> put_flash(:error, "Object deleted from the bucket but Database error")}
+
+      {:ok, {:ok, _}} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Successfully deleted from the bucket")
+         |> update(:uploaded_files, &Enum.filter(&1, fn file -> file.key != key end))}
+    end
+  end
+
   # View utilities -------
 
   @doc """

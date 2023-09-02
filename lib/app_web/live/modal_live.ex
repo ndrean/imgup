@@ -35,6 +35,9 @@ defmodule AppWeb.ModalForm do
         <.icon name="hero-link" /> View the compressed file
       </.link>
 
+      <.button phx-click="delete" phx-value-key={@file.key} phx-target={@myself}>
+        <.icon name="hero-trash"/>
+      </.button>
       <.simple_form
         id={"dwld-#{@file.key}"}
         for={@form_dwld}
@@ -93,6 +96,34 @@ defmodule AppWeb.ModalForm do
   end
 
   @impl true
+  def handle_event("delete", %{"key" => key}, socket) do
+    bucket = bucket()
+
+    case check_if_exists_in_bucket(bucket, key) do
+      nil ->
+        {:noreply, App.send_flash!(socket, :error, "Object not found in the bucket")}
+
+      _ ->
+        # run in a Task to ensure that S3 returns a response before the next check
+        Task.async(fn -> ExAws.S3.delete_object(bucket, key) |> ExAws.request() end)
+        |> Task.await()
+
+        # check that the object is deleted before sending to the LV the order to update
+        # the database and LV state accordingly.
+        case check_if_exists_in_bucket(bucket, key) do
+          nil ->
+            Logger.info("Object deleted")
+            send(self(), {:delete, key})
+            {:noreply, socket}
+
+          _ ->
+            Logger.warning("Object not deleted")
+            {:noreply, App.send_flash!(socket, :error, "Object not removed from the bucket")}
+        end
+    end
+  end
+
+  @impl true
   def handle_event("download", %{"name" => ""}, socket) do
     {:noreply, socket}
   end
@@ -140,6 +171,13 @@ defmodule AppWeb.ModalForm do
          |> App.send_flash!(:error, "An error occured when saving: #{inspect(msg)}")
          |> reset_form()}
     end
+  end
+
+  def check_if_exists_in_bucket(bucket, key) do
+    ExAws.S3.list_objects(bucket)
+    |> ExAws.request!()
+    |> get_in([:body, :contents])
+    |> Enum.find(&(&1.key == key))
   end
 
   defp reset_form(socket) do
