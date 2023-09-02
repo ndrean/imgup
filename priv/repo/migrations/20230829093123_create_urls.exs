@@ -6,6 +6,7 @@ defmodule App.Repo.Migrations.CreateUrls do
       add :public_url, :string
       add :compressed_url, :string
       add :key, :string
+      add :ext, :string
       add :user_id, references(:users)
 
       timestamps()

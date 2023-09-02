@@ -32,8 +32,7 @@ defmodule AppWeb.ModalForm do
     ~H"""
     <div>
       <.link href={@file.compressed_url} target="_blank">
-        <.icon name="hero-link" /> Link to the compressed file:
-        <p><%= @file.compressed_url %></p>
+        <.icon name="hero-link" /> View the compressed file
       </.link>
 
       <.simple_form
@@ -42,6 +41,7 @@ defmodule AppWeb.ModalForm do
         phx-submit={JS.push("download") |> hide_modal("modal-#{@file.key}")}
         phx-target={@myself}
         phx-value-key={@file.key}
+        phx-value-ext={@file.ext}
         phx-change="change"
       >
         <.input
@@ -69,7 +69,7 @@ defmodule AppWeb.ModalForm do
   end
 
   @impl true
-  def handle_event("change", %{"input" => input, "key" => _key}, socket) do
+  def handle_event("change", %{"input" => input, "key" => _key, "ext" => _ext}, socket) do
     changeset = Input.create_changeset(input)
 
     case changeset.valid? do
@@ -81,7 +81,7 @@ defmodule AppWeb.ModalForm do
 
       false ->
         err_msg =
-          Ecto.Changeset.traverse_errors(changeset, &translate_error/1)
+          Ecto.Changeset.traverse_errors(changeset, & &1)
           |> Map.get(:name)
           |> hd()
 
@@ -100,9 +100,13 @@ defmodule AppWeb.ModalForm do
   # setting the name for the file that is going to be saved. !! extension is set as ".png".
   # !! flash messages are only rendered by parent Livevewi -> `send_flash!`
   @impl true
-  def handle_event("download", %{"input" => %{"name" => name}, "key" => key}, socket) do
+  def handle_event(
+        "download",
+        %{"input" => %{"name" => name}, "key" => key, "ext" => ext},
+        socket
+      ) do
     bucket = bucket()
-    dest = build_dest(name, "png")
+    dest = build_dest(name, ext)
 
     changeset = Input.create_changeset(%{"name" => name})
 

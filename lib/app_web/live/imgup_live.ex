@@ -1,8 +1,8 @@
 defmodule AppWeb.ImgupLive do
   use AppWeb, :live_view
   on_mount AppWeb.UserLiveInit
-  require Logger
   alias App.Gallery.Url
+  require Logger
 
   @impl true
   def mount(_params, _session, socket) do
@@ -24,18 +24,14 @@ defmodule AppWeb.ImgupLive do
 
   defp presign_upload(entry, socket) do
     uploads = socket.assigns.uploads
-    bucket_original = Application.get_env(:ex_aws, :original_bucket)
-    bucket_compressed = Application.get_env(:ex_aws, :compressed_bucket)
+    bucket_original = bucket_original()
+    bucket_compressed = bucket_compressed()
     key = Cid.cid("#{DateTime.utc_now() |> DateTime.to_iso8601()}_#{entry.client_name}")
 
-    config = %{
-      region: System.get_env("AWS_REGION"),
-      access_key_id: System.get_env("AWS_ACCESS_KEY_ID"),
-      secret_access_key: System.get_env("AWS_SECRET_ACCESS_KEY")
-    }
+    aws_config = aws_config()
 
     {:ok, fields} =
-      SimpleS3Upload.sign_form_upload(config, bucket_original,
+      SimpleS3Upload.sign_form_upload(aws_config, bucket_original,
         key: key,
         content_type: entry.client_type,
         max_file_size: uploads[entry.upload_config].max_file_size,
@@ -46,9 +42,10 @@ defmodule AppWeb.ImgupLive do
       %{
         uploader: "S3",
         key: key,
-        url: "https://#{bucket_original}.s3-#{config.region}.amazonaws.com",
-        compressed_url: "https://#{bucket_compressed}.s3-#{config.region}.amazonaws.com",
-        fields: fields
+        url: "https://#{bucket_original}.s3-#{aws_config.region}.amazonaws.com",
+        compressed_url: "https://#{bucket_compressed}.s3-#{aws_config.region}.amazonaws.com",
+        fields: fields,
+        ext: get_entry_extension(entry)
       }
 
     {:ok, meta, socket}
@@ -127,6 +124,7 @@ defmodule AppWeb.ImgupLive do
       key: file.key,
       public_url: file.public_url,
       compressed_url: file.compressed_url,
+      ext: file.ext,
       user_id: user.id
     })
   end
@@ -159,9 +157,21 @@ defmodule AppWeb.ImgupLive do
         |> App.Repo.transaction()
 
       false ->
-        err = Enum.find(changesets, &(&1.valid? == false)).errors
-        {:error, inspect(err)}
+        errs = extract_errors(changesets)
+        {:error, inspect(errs)}
     end
+  end
+
+  def extract_errors(changesets) do
+    Enum.find(changesets, &(&1.valid? == false))
+    |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
+    |> then(fn errors ->
+      Map.keys(errors) |> Enum.map(&Map.get(errors, &1))
+    end)
+  end
+
+  def get_entry_extension(entry) do
+    entry.client_name |> String.split(".") |> List.last()
   end
 
   def are_files_uploadable?(image_list) do
@@ -171,9 +181,23 @@ defmodule AppWeb.ImgupLive do
 
   def error_to_string(:too_large), do: "Too large."
   def error_to_string(:not_accepted), do: "You have selected an unacceptable file type."
+
   # coveralls-ignore-start
   def error_to_string(:external_client_failure),
     do: "Couldn't upload files to S3. Open an issue on Github and contact the repo owner."
 
   # coveralls-ignore-stop
+  def aws_region, do: System.get_env("AWS_REGION")
+  def aws_access_key_id, do: System.get_env("AWS_ACCESS_KEY_ID")
+  def aws_secret_access_key, do: System.get_env("AWS_SECRET_ACCESS_KEY")
+  def bucket_original, do: Application.get_env(:ex_aws, :original_bucket)
+  def bucket_compressed, do: Application.get_env(:ex_aws, :compressed_bucket)
+
+  def aws_config do
+    %{
+      region: aws_region(),
+      access_key_id: aws_access_key_id(),
+      secret_access_key: aws_secret_access_key()
+    }
+  end
 end
