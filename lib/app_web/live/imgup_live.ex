@@ -6,9 +6,11 @@ defmodule AppWeb.ImgupLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    default_assigns = %{url: ""}
+
     {:ok,
      socket
-     |> assign(:new_file, "")
+     |> assign(default_assigns)
      |> allow_upload(:image_list,
        accept: ~w(image/*),
        max_entries: 6,
@@ -54,9 +56,12 @@ defmodule AppWeb.ImgupLive do
 
   # Event handlers -------
   @impl true
-  def handle_params(_unsigned_params, _uri, socket) do
-    {:noreply, socket}
+  def handle_params(%{"url" => url}, _uri, socket) do
+    {:noreply, assign(socket, :url, url)}
   end
+
+  @impl true
+  def handle_params(_, _, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("validate", _params, socket) do

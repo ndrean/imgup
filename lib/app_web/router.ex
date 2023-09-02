@@ -22,7 +22,6 @@ defmodule AppWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
-    live "/liveview", ImgupLive
     live "/liveview_clientless", ImgupNoClientLive
   end
 
@@ -56,6 +55,7 @@ defmodule AppWeb.Router do
       on_mount: [{AppWeb.UserAuth, :ensure_authenticated}] do
       live "/users/settings", UserSettingsLive, :edit
       live "/users/settings/confirm_email/:token", UserSettingsLive, :confirm_email
+      live "/liveview", ImgupLive
     end
   end
 
