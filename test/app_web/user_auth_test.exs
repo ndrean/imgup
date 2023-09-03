@@ -1,9 +1,9 @@
 defmodule AppWeb.UserAuthTest do
   use AppWeb.ConnCase, async: true
 
-  alias Phoenix.LiveView
   alias App.Accounts
   alias AppWeb.UserAuth
+  alias Phoenix.LiveView
   import App.AccountsFixtures
 
   @remember_me_cookie "_app_web_user_remember_me"

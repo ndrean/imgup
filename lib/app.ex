@@ -34,4 +34,8 @@ defmodule App do
     send(self(), :clear_flash)
     socket
   end
+
+  def get_entry_extension(entry) do
+    entry.client_type |> MIME.extensions() |> hd()
+  end
 end

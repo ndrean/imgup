@@ -68,7 +68,6 @@ defmodule AppWeb.ModalForm do
   def mount(socket) do
     init_input = %{"name" => ""}
     {:ok, assign(socket, :form_dwld, to_form(Input.create_changeset(init_input)))}
-    # {:ok, assign(socket, :form_dwld, to_form(%{"name" => ""}))}
   end
 
   @impl true
@@ -122,6 +121,20 @@ defmodule AppWeb.ModalForm do
     end
   end
 
+  # Task.await receives the S3 delete response: a 204 no content. We don't know if the object is deleted so we check after.
+  # {:ok,
+  #  %{
+  #    body: "",
+  #    headers: [
+  #      {"x-amz-id-2",
+  #       "TnK3TiuJVAiVxg06DwH9Eh02SFHVj+URLy35+S5LhapUcO4buc07k+8CeYNyxoIhrTQTbHGcE8I="},
+  #      {"x-amz-request-id", "SJEMQQ3EG7R6XYGB"},
+  #      {"Date", "Sat, 02 Sep 2023 23:42:11 GMT"},
+  #      {"Server", "AmazonS3"}
+  #    ],
+  #    status_code: 204
+  #  }}
+
   @impl true
   def handle_event("download", %{"name" => ""}, socket) do
     {:noreply, socket}
@@ -171,6 +184,21 @@ defmodule AppWeb.ModalForm do
          |> reset_form()}
     end
   end
+
+  @doc """
+  If the key doesn't exist, it returns `nil`, otherwise an object of the form:
+    %{
+      owner: %{
+        id: "54a149a5522afd4a6424f8f77e41c25521ad980403aba904f7cc286e3a5187f9",
+        display_name: ""
+      },
+      size: "890601",
+      key: "bafkreibydopavab5llmih2moggi2hj3unqgn3h5astezo6vsfnciiwyanu",
+      last_modified: "2023-09-02T23:46:32.000Z",
+      storage_class: "STANDARD",
+      e_tag: "\"845b6f8b2343842e9bf055e27407bafa\""
+    }
+  """
 
   def check_if_exists_in_bucket(bucket, key) do
     ExAws.S3.list_objects(bucket)

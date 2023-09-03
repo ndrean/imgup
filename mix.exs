@@ -64,6 +64,7 @@ defmodule App.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.11.1", only: [:dev]},
       {:ecto_erd, "~> 0.5.1", only: [:dev]},
+      {:vix, "~> 0.5"},
 
       # Cid
       {:excid, "~> 1.0.1"},

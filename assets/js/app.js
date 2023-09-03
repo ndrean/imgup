@@ -25,7 +25,9 @@ import topbar from "../vendor/topbar";
 let Uploaders = {};
 
 Uploaders.S3 = function (entries, onViewError) {
+  console.log("S3______", entries);
   entries.forEach((entry) => {
+    console.log({ entry });
     // Creating the form data and getting metadata
     let formData = new FormData();
     let { url, fields } = entry.meta;

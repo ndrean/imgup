@@ -6,11 +6,11 @@ defmodule AppWeb.ImgupLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    default_assigns = %{url: ""}
+    init_assigns = %{url: ""}
 
     {:ok,
      socket
-     |> assign(default_assigns)
+     |> assign(init_assigns)
      |> allow_upload(:image_list,
        accept: ~w(image/*),
        max_entries: 6,
@@ -26,9 +26,8 @@ defmodule AppWeb.ImgupLive do
     uploads = socket.assigns.uploads
     bucket_original = bucket_original()
     bucket_compressed = bucket_compressed()
-    key = Cid.cid("#{DateTime.utc_now() |> DateTime.to_iso8601()}_#{entry.client_name}")
-
     aws_config = aws_config()
+    key = Cid.cid("#{DateTime.utc_now() |> DateTime.to_iso8601()}_#{entry.client_name}")
 
     {:ok, fields} =
       SimpleS3Upload.sign_form_upload(aws_config, bucket_original,
@@ -45,7 +44,7 @@ defmodule AppWeb.ImgupLive do
         url: "https://#{bucket_original}.s3-#{aws_config.region}.amazonaws.com",
         compressed_url: "https://#{bucket_compressed}.s3-#{aws_config.region}.amazonaws.com",
         fields: fields,
-        ext: get_entry_extension(entry)
+        ext: App.get_entry_extension(entry)
       }
 
     {:ok, meta, socket}
@@ -57,8 +56,9 @@ defmodule AppWeb.ImgupLive do
     {:noreply, assign(socket, :url, url)}
   end
 
-  @impl true
-  def handle_params(_, _, socket), do: {:noreply, socket}
+  def handle_params(_p, _uri, socket) do
+    {:noreply, socket}
+  end
 
   @impl true
   def handle_event("validate", _params, socket) do
@@ -84,6 +84,7 @@ defmodule AppWeb.ImgupLive do
 
         {:ok, meta}
       end)
+      |> dbg()
 
     case save_file_urls(uploaded_files, current_user) do
       {:error, msg} ->
@@ -200,10 +201,6 @@ defmodule AppWeb.ImgupLive do
     end)
   end
 
-  def get_entry_extension(entry) do
-    entry.client_name |> String.split(".") |> List.last()
-  end
-
   def are_files_uploadable?(image_list) do
     error_list = Map.get(image_list, :errors)
     Enum.empty?(error_list) and length(image_list.entries) > 0
@@ -217,6 +214,8 @@ defmodule AppWeb.ImgupLive do
     do: "Couldn't upload files to S3. Open an issue on Github and contact the repo owner."
 
   # coveralls-ignore-stop
+
+  # utilities for config
   def aws_region, do: System.get_env("AWS_REGION")
   def aws_access_key_id, do: System.get_env("AWS_ACCESS_KEY_ID")
   def aws_secret_access_key, do: System.get_env("AWS_SECRET_ACCESS_KEY")
