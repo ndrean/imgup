@@ -1,5 +1,6 @@
 defmodule AppWeb.ImgupNoClientLive do
   use AppWeb, :live_view
+  alias App.ChunkWriter
   require Logger
 
   @upload_dir Application.app_dir(:app, ["priv", "static", "image_uploads"])
@@ -18,7 +19,7 @@ defmodule AppWeb.ImgupNoClientLive do
        auto_upload: true,
        max_file_size: 5_000_000,
        progress: &handle_progress/3,
-       writer: fn _, _, _ -> {App.ChunkWriter, []} end
+       writer: fn _, _, _ -> {ChunkWriter, []} end
        # Do not define presign_upload. This will create a local photo in /vars
      )}
   end
@@ -45,6 +46,7 @@ defmodule AppWeb.ImgupNoClientLive do
         {:ok,
          entry
          |> Map.put(:image_url, build_image_url(entry.client_name))
+         |> Map.put(:thumbnail, build_image_url(""))
          |> Map.put(:url_path, build_url_path(entry.client_name))
          |> Map.put(:errors, [])
          |> Map.update(:errors, [], fn list ->
@@ -148,7 +150,7 @@ defmodule AppWeb.ImgupNoClientLive do
             Operation.thumbnail!(dest_name, th)
             |> Image.write_to_file(thumb_name)
 
-          send(pid, {:update, filename, "thumb-#{filename}", entry.uuid})
+          send(pid, {:update, "thumb-#{filename}", entry.uuid})
         rescue
           e ->
             Logger.warning(inspect(e.message))
@@ -163,18 +165,12 @@ defmodule AppWeb.ImgupNoClientLive do
     do: {:noreply, put_flash(socket, :error, "Picture not transformed")}
 
   @impl true
-  def handle_info({:update, filename, thumb_name, uuid}, socket) do
-    new_url_path =
-      build_url_path(thumb_name)
+  def handle_info({:update, thumb_name, uuid}, socket) do
+    # new_url_path =
+    #   build_url_path(thumb_name)
 
-    build_image_url(filename) |> dbg()
-    # AppWeb.Endpoint.static_path("/#{thumb_name}")
-
-    new_image_url =
+    new_thumbnail =
       build_image_url(thumb_name) |> dbg()
-
-    # AppWeb.Endpoint.url() <>
-    # AppWeb.Endpoint.static_path("/image_uploads/#{thumb_name}")
 
     Logger.info("Render Update after Image___________")
 
@@ -182,7 +178,7 @@ defmodule AppWeb.ImgupNoClientLive do
      socket
      |> update(
        :uploaded_files_locally,
-       &update_file_at_uuid(&1, uuid, new_url_path, new_image_url)
+       &update_file_at_uuid(&1, uuid, new_thumbnail)
      )}
   end
 
@@ -191,12 +187,10 @@ defmodule AppWeb.ImgupNoClientLive do
 
   Defines the compression quality `q`, the resizing factor `r`, the thumbnail size `th`
   """
-  def get_transform_opts(opts) do
-    q = Map.get(opts, :q, @default_opt.q)
-    r = Map.get(opts, :r, @default_opt.r)
-    th = Map.get(opts, :th, @default_opt.th)
-    {q, r, th}
-  end
+  def get_transform_opts(opts),
+    do:
+      {Map.get(opts, :q, @default_opt.q), Map.get(opts, :r, @default_opt.r),
+       Map.get(opts, :th, @default_opt.th)}
 
   def check_sum(entry_size, chunked_size), do: entry_size == chunked_size
 
@@ -208,13 +202,13 @@ defmodule AppWeb.ImgupNoClientLive do
     n <> "." <> ext
   end
 
-  def update_file_at_uuid(files, uuid, new_url_path, new_image_url) do
-    Enum.map(files, fn el ->
-      if el.uuid == uuid,
-        do: %{el | url_path: new_url_path, image_url: new_image_url},
-        else: el
-    end)
-  end
+  def update_file_at_uuid(files, uuid, new_thumbnail),
+    do:
+      Enum.map(files, fn el ->
+        if el.uuid == uuid,
+          do: %{el | thumbnail: new_thumbnail},
+          else: el
+      end)
 
   def build_url_path(name), do: AppWeb.Endpoint.static_path("/#{name}")
 
