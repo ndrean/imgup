@@ -52,16 +52,6 @@ defmodule AppWeb.ImgupNoClientLive do
          |> Map.update(:errors, [], fn list ->
            if checked_sum, do: list, else: list ++ ["file truncated"]
          end)}
-
-        # {:ok,
-        #  entry
-        #  |> Map.put(:image_url, build_image_url(entry.client_name))
-        #  |> Map.put(:thumbnail, build_image_url(entry.client_name))
-        #  |> Map.put(:url_path, build_url_path(entry.client_name))
-        #  |> Map.put(:errors, [])
-        #  |> Map.update(:errors, [], fn list ->
-        #    if checked_sum, do: list, else: list ++ ["file truncated"]
-        #  end)}
       end)
 
     case length(uploaded_file.errors) do
