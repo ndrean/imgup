@@ -176,8 +176,8 @@ defmodule AppWeb.ImgupNoClientLive do
 
   @impl true
   def handle_info({:update, filename, thumb_name, uuid}, socket) do
-    # new_url_path =
-    #   build_url_path(thumb_name)
+    new_url_path =
+      build_url_path(thumb_name)
 
     new_thumbnail =
       build_image_url(thumb_name)
@@ -190,7 +190,7 @@ defmodule AppWeb.ImgupNoClientLive do
      socket
      |> update(
        :uploaded_files_locally,
-       &update_file_at_uuid(&1, uuid, new_image_url, new_thumbnail)
+       &update_file_at_uuid(&1, uuid, new_image_url, new_thumbnail, new_url_path)
      )}
   end
 
@@ -214,11 +214,11 @@ defmodule AppWeb.ImgupNoClientLive do
     n <> "." <> ext
   end
 
-  def update_file_at_uuid(files, uuid, new_image_url, new_thumbnail),
+  def update_file_at_uuid(files, uuid, new_image_url, new_thumbnail, new_url_path),
     do:
       Enum.map(files, fn el ->
         if el.uuid == uuid,
-          do: %{el | thumbnail: new_thumbnail, image_url: new_image_url},
+          do: %{el | thumbnail: new_thumbnail, image_url: new_image_url, url_path: new_url_path},
           else: el
       end)
 
