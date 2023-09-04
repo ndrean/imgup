@@ -90,22 +90,21 @@
                     Try to load the compressed image from S3. This is because the compression might take some time, so we retry until it's available
                     See https://stackoverflow.com/questions/19673254/js-jquery-retry-img-load-after-1-second.
                     -->
-                <img
-                  class="block max-w-12 max-h-12 w-auto h-auto flex-none bg-gray-50"
-                  src={file.image_url}
-                />
                 <div class="min-w-0 flex-auto">
                   <p>
-                    <span class="text-sm font-semibold leading-6 break-all text-gray-900">
+                    <%!-- <span class="text-sm font-semibold leading-6 break-all text-gray-900">
                       URL path:
-                    </span>
+                    </span> --%>
                     <a
                       class="text-sm leading-6 break-all underline text-indigo-600"
                       href={file.image_url}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <%= file.url_path %>
+                      <img
+                        class="block max-w-12 max-h-12 w-auto h-auto flex-none bg-gray-50"
+                        src={file.image_url}
+                      />
                     </a>
                   </p>
                 </div>

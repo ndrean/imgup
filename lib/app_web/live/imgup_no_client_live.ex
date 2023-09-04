@@ -3,12 +3,12 @@ defmodule AppWeb.ImgupNoClientLive do
   require Logger
 
   @upload_dir Application.app_dir(:app, ["priv", "static", "image_uploads"])
+  @default_opt %{q: 80, r: 0.5, th: 80}
 
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
      socket
-     |> assign(:pid, self())
      |> assign(:uploaded_files_locally, [])
      |> assign(:uploaded_files_to_S3, [])
      |> allow_upload(:image_list,
@@ -18,7 +18,7 @@ defmodule AppWeb.ImgupNoClientLive do
        auto_upload: true,
        max_file_size: 5_000_000,
        progress: &handle_progress/3,
-       writer: fn _, _, _ -> {MyWriter, []} end
+       writer: fn _, _, _ -> {App.ChunkWriter, []} end
        # Do not define presign_upload. This will create a local photo in /vars
      )}
   end
@@ -32,35 +32,37 @@ defmodule AppWeb.ImgupNoClientLive do
   defp handle_progress(:image_list, entry, socket) do
     uploaded_file =
       consume_uploaded_entry(socket, entry, fn %{file: file, total_size: total_size} ->
-        check_size = size_check(entry.client_size, total_size)
-        pid = socket.assigns.pid
-        Task.start(fn -> transform_image(check_size, pid, file, entry, 80) end)
+        checked_sum = check_sum(entry.client_size, total_size)
+        ext = App.get_entry_extension(entry)
+        entry = Map.update!(entry, :client_name, fn name -> clean_name(name, ext) end)
+        pid = self()
+
+        checked_sum &&
+          Task.start(fn -> transform_image(pid, file, entry, %{q: 70}) end)
+
+        Logger.info("first render before Task Image________")
 
         {:ok,
          entry
-         |> Map.put(
-           :image_url,
-           AppWeb.Endpoint.url() <>
-             AppWeb.Endpoint.static_path("/image_uploads/#{entry.client_name}")
-         )
-         |> Map.put(
-           :url_path,
-           AppWeb.Endpoint.static_path("/image_uploads/#{entry.client_name}")
-         )
+         |> Map.put(:image_url, build_image_url(entry.client_name))
+         |> Map.put(:url_path, build_url_path(entry.client_name))
          |> Map.put(:errors, [])
          |> Map.update(:errors, [], fn list ->
-           if check_size, do: list, else: list ++ ["file truncated"]
+           if checked_sum, do: list, else: list ++ ["file truncated"]
          end)}
       end)
 
     case length(uploaded_file.errors) do
       0 ->
-        uploaded_file |> dbg()
         {:noreply, update(socket, :uploaded_files_locally, &(&1 ++ [uploaded_file]))}
 
       _ ->
         Logger.warning(inspect(uploaded_file.errors))
-        {:noreply, put_flash(socket, :error, inspect(uploaded_file.errors))}
+
+        {:noreply,
+         socket
+         |> put_flash(:error, inspect(uploaded_file.errors))
+         |> update(:uploaded_files_locally, &(&1 ++ [uploaded_file]))}
     end
   end
 
@@ -68,7 +70,6 @@ defmodule AppWeb.ImgupNoClientLive do
 
   @impl true
   def handle_event("validate", _params, socket) do
-    IO.puts("valid")
     {:noreply, socket}
   end
 
@@ -119,17 +120,11 @@ defmodule AppWeb.ImgupNoClientLive do
     end
   end
 
-  def transform_image(false, _, _, _, _) do
-    :error
-  end
-
-  def transform_image(true, pid, file, entry, q) do
+  def transform_image(pid, file, entry, opts \\ @default_opt) do
     alias Vix.Vips.Image
     alias Vix.Vips.Operation
 
-    file_name = entry.client_name
-    dest_name = build_dest(file_name)
-    ext = App.get_entry_extension(entry)
+    {q, r, th} = get_transform_opts(opts)
 
     case Image.new_from_buffer(file) do
       {:error, msg} ->
@@ -137,20 +132,23 @@ defmodule AppWeb.ImgupNoClientLive do
 
       {:ok, img} ->
         try do
-          w = Image.width(img)
-          # IO.puts("Width: #{Image.width(img)}")
-          # IO.puts("Height: #{Image.height(img)}")
-          :ok = Image.write_to_file(img, "#{dest_name}[Q=#{q}]") |> dbg()
+          # w = Image.width(img) |> to_string()
+          filename = entry.client_name
+          dest_name = build_dest(filename)
+          :ok = Image.write_to_file(img, "#{dest_name}[Q=#{q}]")
 
-          rename = "small-#{to_string(w)}.#{ext}" |> dbg()
-
-          :ok =
-            Operation.resize!(img, 0.1) |> Image.write_to_file(rename) |> dbg()
+          resized_name = "small-#{filename}" |> build_dest()
 
           :ok =
-            Operation.thumbnail!(rename, 80)
-            |> Image.write_to_file("thumb-#{to_string(w)}.#{ext}")
-            |> dbg()
+            Operation.resize!(img, r) |> Image.write_to_file(resized_name)
+
+          thumb_name = "thumb-#{filename}" |> build_dest()
+
+          :ok =
+            Operation.thumbnail!(dest_name, th)
+            |> Image.write_to_file(thumb_name)
+
+          send(pid, {:update, filename, "thumb-#{filename}", entry.uuid})
         rescue
           e ->
             Logger.warning(inspect(e.message))
@@ -159,15 +157,69 @@ defmodule AppWeb.ImgupNoClientLive do
     end
   end
 
+  # callback from the `transform_image` Task in case of error
   @impl true
-  def handle_info({:error, :file_not_transformed}, socket) do
-    {:noreply, put_flash(socket, :error, "Picture not transformed")}
+  def handle_info({:error, :file_not_transformed}, socket),
+    do: {:noreply, put_flash(socket, :error, "Picture not transformed")}
+
+  @impl true
+  def handle_info({:update, filename, thumb_name, uuid}, socket) do
+    new_url_path =
+      build_url_path(thumb_name)
+
+    build_image_url(filename) |> dbg()
+    # AppWeb.Endpoint.static_path("/#{thumb_name}")
+
+    new_image_url =
+      build_image_url(thumb_name) |> dbg()
+
+    # AppWeb.Endpoint.url() <>
+    # AppWeb.Endpoint.static_path("/image_uploads/#{thumb_name}")
+
+    Logger.info("Render Update after Image___________")
+
+    {:noreply,
+     socket
+     |> update(
+       :uploaded_files_locally,
+       &update_file_at_uuid(&1, uuid, new_url_path, new_image_url)
+     )}
   end
 
-  @spec size_check(any, any) :: boolean
-  def size_check(entry_size, chunked_size), do: entry_size == chunked_size
+  @doc """
+  Takes the option map that defaults to `@default_opt`.
 
-  defp build_dest(name) do
-    Path.join([:code.priv_dir(:app), "static", "image_uploads", "#{name}"])
+  Defines the compression quality `q`, the resizing factor `r`, the thumbnail size `th`
+  """
+  def get_transform_opts(opts) do
+    q = Map.get(opts, :q, @default_opt.q)
+    r = Map.get(opts, :r, @default_opt.r)
+    th = Map.get(opts, :th, @default_opt.th)
+    {q, r, th}
   end
+
+  def check_sum(entry_size, chunked_size), do: entry_size == chunked_size
+
+  defp build_dest(name),
+    do: Path.join([:code.priv_dir(:app), "static", "image_uploads", "#{name}"])
+
+  def clean_name(name, ext) do
+    n = name |> String.replace(" ", "") |> String.replace(".", "")
+    n <> "." <> ext
+  end
+
+  def update_file_at_uuid(files, uuid, new_url_path, new_image_url) do
+    Enum.map(files, fn el ->
+      if el.uuid == uuid,
+        do: %{el | url_path: new_url_path, image_url: new_image_url},
+        else: el
+    end)
+  end
+
+  def build_url_path(name), do: AppWeb.Endpoint.static_path("/#{name}")
+
+  def build_image_url(name),
+    do:
+      AppWeb.Endpoint.url() <>
+        AppWeb.Endpoint.static_path("/image_uploads/#{name}")
 end

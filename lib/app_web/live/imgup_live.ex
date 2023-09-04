@@ -84,7 +84,6 @@ defmodule AppWeb.ImgupLive do
 
         {:ok, meta}
       end)
-      |> dbg()
 
     case save_file_urls(uploaded_files, current_user) do
       {:error, msg} ->
@@ -111,6 +110,7 @@ defmodule AppWeb.ImgupLive do
     {:noreply, clear_flash(socket)}
   end
 
+  # delete the ref "key" in the database
   def handle_info({:delete, key}, socket) do
     res =
       App.Repo.transaction(fn repo ->
@@ -139,6 +139,24 @@ defmodule AppWeb.ImgupLive do
          |> put_flash(:info, "Successfully deleted from the bucket")
          |> update(:uploaded_files, &Enum.filter(&1, fn file -> file.key != key end))}
     end
+  end
+
+  # success callback from live_component after local save
+  @impl true
+  def handle_info({:success, :donwload}, socket) do
+    {:noreply,
+     socket
+     |> App.clear_flash!()
+     |> App.send_flash!(:info, "Success, file saved locally")}
+  end
+
+  # failure callback from live_component after local save
+  @impl true
+  def handle_info({:fail, {:error, msg}}, socket) do
+    {:noreply,
+     socket
+     |> App.clear_flash!()
+     |> App.send_flash!(:error, "An error occured when saving: #{inspect(msg)}")}
   end
 
   # View utilities -------

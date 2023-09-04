@@ -14,6 +14,9 @@ defmodule App do
   def g_client_id, do: System.get_env("GOOGLE_CLIENT_ID")
   def hostname, do: AppWeb.Endpoint.url()
 
+  @doc """
+  Defines the Google callback endpoint. It must correspond to the settings in the Google Dev console.
+  """
   def g_cb_url do
     Path.join(
       hostname(),
@@ -35,6 +38,9 @@ defmodule App do
     socket
   end
 
+  @doc """
+  Get the extension from MIME type
+  """
   def get_entry_extension(entry) do
     entry.client_type |> MIME.extensions() |> hd()
   end

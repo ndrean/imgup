@@ -72,6 +72,7 @@ defmodule AppWeb.ModalForm do
 
   @impl true
   def handle_event("change", %{"input" => input, "key" => _key, "ext" => _ext}, socket) do
+    IO.puts("change-------")
     changeset = Input.create_changeset(input)
 
     case changeset.valid? do
@@ -140,8 +141,8 @@ defmodule AppWeb.ModalForm do
     {:noreply, socket}
   end
 
-  # extension if reset as the original file.
-  # !! flash messages are only rendered by parent Livevewi -> `send_flash!`
+  # Download in a Task from S3 into a file with a given name from the form.
+  # Using "send_flash!" to send a flash to the parent LV.
   @impl true
   def handle_event(
         "download",
@@ -150,39 +151,47 @@ defmodule AppWeb.ModalForm do
       ) do
     bucket = bucket()
     dest = build_dest(name, ext)
+    pid = self()
 
     changeset = Input.create_changeset(%{"name" => name})
 
     request =
       case changeset.valid? do
         true ->
-          ExAws.S3.download_file(bucket, key, dest)
-          |> ExAws.request()
+          Task.start(fn ->
+            save_local(pid, bucket, key, dest)
+          end)
 
         false ->
           :error
       end
 
     case request do
-      {:ok, :done} ->
-        {:noreply,
-         socket
-         |> App.clear_flash!()
-         |> App.send_flash!(:info, "Success, file saved locally")
-         |> reset_form()}
-
       :error ->
-        {:noreply, socket}
-
-      {:error, msg} ->
-        Logger.warning(inspect(msg))
-
         {:noreply,
          socket
          |> App.clear_flash!()
-         |> App.send_flash!(:error, "An error occured when saving: #{inspect(msg)}")
-         |> reset_form()}
+         |> App.send_flash!(:error, "Invalid file name")}
+
+      {:ok, _} ->
+        {:noreply, reset_form(socket)}
     end
+  end
+
+  # Task: stream from S3 to local file. Send msg to the LV
+  def save_local(pid, bucket, key, dest) do
+    ExAws.S3.download_file(bucket, key, :memory)
+    |> ExAws.stream!()
+    |> Stream.into(File.stream!(dest))
+    |> Stream.run()
+
+    send(pid, {:success, :donwload})
+  rescue
+    e in ExAws.Error ->
+      send(pid, {:fail, {:error, inspect(e.message)}})
+
+    _ ->
+      send(pid, {:fail, {:error, :stream_error}})
   end
 
   @doc """
