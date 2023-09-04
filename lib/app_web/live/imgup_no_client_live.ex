@@ -45,13 +45,23 @@ defmodule AppWeb.ImgupNoClientLive do
 
         {:ok,
          entry
-         |> Map.put(:image_url, build_image_url(entry.client_name))
-         |> Map.put(:thumbnail, build_image_url(""))
-         |> Map.put(:url_path, build_url_path(entry.client_name))
+         |> Map.put(:thumbnail, nil)
+         |> Map.put(:image_url, nil)
+         |> Map.put(:url_path, nil)
          |> Map.put(:errors, [])
          |> Map.update(:errors, [], fn list ->
            if checked_sum, do: list, else: list ++ ["file truncated"]
          end)}
+
+        # {:ok,
+        #  entry
+        #  |> Map.put(:image_url, build_image_url(entry.client_name))
+        #  |> Map.put(:thumbnail, build_image_url(entry.client_name))
+        #  |> Map.put(:url_path, build_url_path(entry.client_name))
+        #  |> Map.put(:errors, [])
+        #  |> Map.update(:errors, [], fn list ->
+        #    if checked_sum, do: list, else: list ++ ["file truncated"]
+        #  end)}
       end)
 
     case length(uploaded_file.errors) do
@@ -150,7 +160,7 @@ defmodule AppWeb.ImgupNoClientLive do
             Operation.thumbnail!(dest_name, th)
             |> Image.write_to_file(thumb_name)
 
-          send(pid, {:update, "thumb-#{filename}", entry.uuid})
+          send(pid, {:update, filename, "thumb-#{filename}", entry.uuid})
         rescue
           e ->
             Logger.warning(inspect(e.message))
@@ -165,12 +175,14 @@ defmodule AppWeb.ImgupNoClientLive do
     do: {:noreply, put_flash(socket, :error, "Picture not transformed")}
 
   @impl true
-  def handle_info({:update, thumb_name, uuid}, socket) do
+  def handle_info({:update, filename, thumb_name, uuid}, socket) do
     # new_url_path =
     #   build_url_path(thumb_name)
 
     new_thumbnail =
-      build_image_url(thumb_name) |> dbg()
+      build_image_url(thumb_name)
+
+    new_image_url = build_image_url(filename)
 
     Logger.info("Render Update after Image___________")
 
@@ -178,7 +190,7 @@ defmodule AppWeb.ImgupNoClientLive do
      socket
      |> update(
        :uploaded_files_locally,
-       &update_file_at_uuid(&1, uuid, new_thumbnail)
+       &update_file_at_uuid(&1, uuid, new_image_url, new_thumbnail)
      )}
   end
 
@@ -202,11 +214,11 @@ defmodule AppWeb.ImgupNoClientLive do
     n <> "." <> ext
   end
 
-  def update_file_at_uuid(files, uuid, new_thumbnail),
+  def update_file_at_uuid(files, uuid, new_image_url, new_thumbnail),
     do:
       Enum.map(files, fn el ->
         if el.uuid == uuid,
-          do: %{el | thumbnail: new_thumbnail},
+          do: %{el | thumbnail: new_thumbnail, image_url: new_image_url},
           else: el
       end)
 
