@@ -1,19 +1,27 @@
 defmodule AppWeb.ImgupNoClientStLive do
   use AppWeb, :live_view
   alias Vix.Vips.Operation
+  alias App.Gallery.Url
+  alias App.Repo
+
   require Logger
 
   @upload_dir Application.app_dir(:app, ["priv", "static", "image_uploads"])
 
+  @delete_bucket_and_db "Sucessfully deleted from bucket and database"
+  @error_delete_object_in_bucket "Failed to delete from bucket"
+  @error_saving_in_bucket "Could not save in the bucket"
+  @error_in_db_but_deleted_from_bucket "Object deleted in bucket but not found in database"
+  @inserted_in_bucket_but_db_failed "Object save in bucket but failed in db"
+
   @impl true
   def mount(_, %{"user_token" => user_token}, socket) do
     File.mkdir_p(@upload_dir)
+    current_user = App.Accounts.get_user_by_session_token(user_token)
 
     socket =
       socket
-      |> assign_new(:current_user, fn ->
-        App.Accounts.get_user_by_session_token(user_token)
-      end)
+      |> assign_new(:current_user, fn -> current_user end)
       |> assign(:uploaded_files_locally, [])
       |> allow_upload(:image_list,
         accept: ~w(image/*),
@@ -24,15 +32,15 @@ defmodule AppWeb.ImgupNoClientStLive do
         progress: &handle_progress/3
       )
       |> stream_configure(:uploaded_files_to_S3, dom_id: &"uploaded-s3-#{&1.uuid}")
-      |> stream(:uploaded_files_to_S3, [], at: -1, limit: 2)
+      |> stream(:uploaded_files_to_S3, load_files(current_user), at: -1, limit: 2)
 
     {:ok, socket}
 
     # Do not define presign_upload. This will create a local photo in /vars
   end
 
-  def list_files do
-    []
+  def load_files(current_user) do
+    App.Gallery.get_urls_by_user(current_user)
   end
 
   # With `auto_upload: true`, we can consume files here
@@ -135,8 +143,6 @@ defmodule AppWeb.ImgupNoClientStLive do
   # callback from successfull upload to S3 to update the stream and the db
   @impl true
   def handle_info({:bucket_success, map}, socket) do
-    alias App.Gallery.Url
-
     data =
       Map.new()
       |> Map.put(:origin_url, map.origin_url)
@@ -147,25 +153,29 @@ defmodule AppWeb.ImgupNoClientStLive do
       %Phoenix.LiveView.UploadEntry{}
       |> Map.merge(data)
 
-    # |> Map.put(:origin_url, map.origin_url)
-    # |> Map.put(:compressed_url, map.compressed_url)
-    # |> Map.put(:uuid, map.uuid)
-
-    current_user = socket.assigns.current_user |> dbg()
+    current_user = socket.assigns.current_user
     data = Map.put(data, :user_id, current_user.id)
 
-    %Url{}
-    |> Url.changeset(data)
-    |> App.Repo.insert()
-    |> dbg()
+    transaction =
+      Repo.transaction(fn repo ->
+        %Url{}
+        |> Url.changeset(data)
+        |> repo.insert()
+      end)
 
-    {:noreply, stream_insert(socket, :uploaded_files_to_S3, new_file)}
+    case transaction do
+      {:ok, _} ->
+        {:noreply, stream_insert(socket, :uploaded_files_to_S3, new_file)}
+
+      {:error, _msg} ->
+        {:noreply, put_flash(socket, :error, @inserted_in_bucket_but_db_failed)}
+    end
   end
 
   # callback error upload to S3
   @impl true
   def handle_info({:upload_error}, socket) do
-    {:noreply, put_flash(socket, :error, "Could not save in the bucket")}
+    {:noreply, put_flash(socket, :error, @error_saving_in_bucket)}
   end
 
   # callback from successfull deletion from bucket
@@ -173,7 +183,6 @@ defmodule AppWeb.ImgupNoClientStLive do
   def handle_info({:success_deletion_from_bucket, dom_id, uuid}, socket) do
     alias App.Repo
     alias App.Gallery.Url
-    IO.puts("success_deletion_from_bucket")
 
     transaction =
       Repo.transaction(fn repo ->
@@ -192,23 +201,23 @@ defmodule AppWeb.ImgupNoClientStLive do
       {:ok, {:ok, _}} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Sucessfully deleted from bucket")
+         |> put_flash(:info, @delete_bucket_and_db)
          |> stream_delete_by_dom_id(:uploaded_files_to_S3, dom_id)}
 
       {:ok, {:error, msg}} ->
-        Logger.warning(inspect(msg))
+        Logger.warning("transaction delete failed " <> inspect(msg))
 
         {:noreply,
          socket
-         |> put_flash(:error, "Object deleted from the bucket but Database error")}
+         |> put_flash(:error, @error_in_db_but_deleted_from_bucket)}
     end
   end
 
   # callback from deletion failure from bucket
   @impl true
   def handle_info({:failed_deletion_from_bucket}, socket) do
-    IO.puts("failed_deletion_from_bucket")
-    {:noreply, put_flash(socket, :error, "Not able to delete from bucket")}
+    Logger.warning("failed_deletion_from_bucket")
+    {:noreply, put_flash(socket, :error, @error_delete_object_in_bucket)}
   end
 
   # response to the JS hook to capture page size
@@ -249,18 +258,6 @@ defmodule AppWeb.ImgupNoClientStLive do
     # concurrently upload the 2 files to the bucket
     pid = self()
     Task.start(fn -> upload(pid, file, file_comp, uuid) end)
-    # {:ok, origin_url} = App.Upload.upload(file)
-    # {:ok, compressed_url} = App.Upload.upload(file_comp)
-
-    # new_file =
-    #   %Phoenix.LiveView.UploadEntry{}
-    #   |> Map.put(:origin_url, origin_url.url)
-    #   |> Map.put(:compressed_url, compressed_url.url)
-    #   |> Map.put(:uuid, uuid)
-
-    # updated_local_files =
-    #   socket.assigns.uploaded_files_locally
-    #   |> Enum.filter(&(&1.uuid != uuid))
 
     {
       :noreply,
@@ -276,8 +273,8 @@ defmodule AppWeb.ImgupNoClientStLive do
         socket
       ) do
     bucket = bucket()
-    keys_to_delete = [Path.basename(origin), Path.basename(thumb)]
     pid = self()
+    keys_to_delete = [Path.basename(origin), Path.basename(thumb)]
 
     keys_to_delete
     |> Task.async_stream(fn key ->
@@ -302,8 +299,17 @@ defmodule AppWeb.ImgupNoClientStLive do
     {:noreply, socket}
   end
 
+  # rm files from server when unselected
   @impl true
   def handle_event("remove-selected", %{"key" => uuid}, socket) do
+    #
+    %{compressed_path: comp_path, image_url: image_url} =
+      socket.assigns.uploaded_files_locally
+      |> Enum.find(&(&1.uuid == uuid))
+
+    File.rm!(comp_path)
+    File.rm!(build_path(Path.basename(image_url)))
+
     {:noreply,
      socket
      |> update(:uploaded_files_locally, &Enum.filter(&1, fn img -> img.uuid != uuid end))}
@@ -368,14 +374,10 @@ defmodule AppWeb.ImgupNoClientStLive do
     rootname <> ext
   end
 
-  # def build_dest(name),
-  #   do: Application.app_dir(:app, ["priv", "static", "image_uploads", name])
-
   def build_path(name),
     do: Application.app_dir(:app, ["priv", "static", "image_uploads", name])
 
   def thumb_name(name), do: Path.rootname(name) <> "-th" <> Path.extname(name)
-  # def comp_name(name), do: Path.rootname(name) <> "-comp" <> Path.extname(name)
 
   defp bucket do
     Application.get_env(:ex_aws, :original_bucket)
@@ -387,17 +389,17 @@ end
 #   progress: 100,
 #   preflighted?: true,
 #   upload_config: :image_list,
-#   upload_ref: "phx-F4Ieh9a692sakgnC",
+#   upload_ref: "phx-F4NSgF6BAJ2Dng8C",
 #   ref: "0",
-#   uuid: "eed07cd0-e686-4ba7-b405-02f1304478c7",
+#   uuid: "808e6ae7-c6fe-4f8e-acdb-812497b4fe0f",
 #   valid?: true,
 #   done?: true,
 #   cancelled?: false,
-#   client_name: "Screenshot 2023-09-04 at 14.56.47.png",
+#   client_name: "Screenshot 2023-06-06 at 17.52.01.png",
 #   client_relative_path: "",
-#   client_size: 594354,
+#   client_size: 99767,
 #   client_type: "image/png",
-#   client_last_modified: 1693832212932
+#   client_last_modified: 1686066727004
 # }
 
 # file_element
