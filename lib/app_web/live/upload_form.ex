@@ -61,10 +61,29 @@ defmodule AppWeb.UploadForm do
                 </div>
               </div>
             </div>
+            <div class="mt-6 flex items-center justify-end gap-x-6">
+                <button
+                  id="submit_button"
+                  type="submit"
+                  class={"rounded-md
+                      #{if are_files_uploadable?(@uploads.image_list) do "bg-indigo-600" else "bg-indigo-200" end}
+                      px-3 py-2 text-sm font-semibold text-white shadow-sm
+                      #{if are_files_uploadable?(@uploads.image_list) do "hover:bg-indigo-500" end}
+                      focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"}
+                  disabled={!are_files_uploadable?(@uploads.image_list)}
+                >
+                  Upload
+                </button>
+              </div>
           </form>
         </div>
       </div>
     </div>
     """
+  end
+
+  def are_files_uploadable?(image_list) do
+    error_list = Map.get(image_list, :errors)
+    Enum.empty?(error_list) and length(image_list.entries) > 0
   end
 end

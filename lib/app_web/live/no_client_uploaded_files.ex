@@ -16,7 +16,6 @@ defmodule AppWeb.NoClientUploadedFiles do
         </p>
 
         <ul  phx-update="stream" id="uploaded_files_s3" role="list" class="divide-y divide-gray-100">
-            <!-- Entry information -->
           <li
             :for={{dom_id,file}<- @uploaded_files_to_S3}
             id={dom_id}

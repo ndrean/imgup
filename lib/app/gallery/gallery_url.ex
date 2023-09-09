@@ -18,18 +18,17 @@ defmodule App.Gallery.Url do
     timestamps()
   end
 
-  @spec changeset(:invalid | %{optional(:__struct__) => none, optional(atom | binary) => any}) ::
-          Ecto.Changeset.t()
   @doc false
-  def changeset(attrs) do
-    %Url{}
+  def changeset(%Url{} = url, attrs) do
+    url
     |> cast(attrs, @keys)
-    |> validate_required([:key, :origin_url, :user_id])
-    |> unique_constraint(:origin_url, name: :urls_origin_url_user_id_index)
+    |> validate_required([:origin_url, :uuid, :user_id])
+
+    # |> unique_constraint(:origin_url, name: :urls_origin_url_user_id_index)
   end
 
-  def thumb_changeset(attrs) do
-    %Url{}
+  def thumb_changeset(%Url{} = url, attrs) do
+    url
     |> cast(attrs, @keys)
     |> validate_required([:user_id, :uuid])
   end

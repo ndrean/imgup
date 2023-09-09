@@ -2,6 +2,7 @@ defmodule AppWeb.ImgupLive do
   use AppWeb, :live_view
   on_mount AppWeb.UserLiveInit
   alias App.Gallery.Url
+  alias App.Repo
   require Logger
 
   @msg_success_in_uploading "Success in uploading"
@@ -125,8 +126,8 @@ defmodule AppWeb.ImgupLive do
   # delete the ref "key" in the database
   def handle_info({:delete, key}, socket) do
     transaction =
-      App.Repo.transaction(fn repo ->
-        data = repo.get_by(App.Gallery.Url, %{key: key})
+      Repo.transaction(fn repo ->
+        data = repo.get_by(Url, %{key: key})
 
         case data do
           nil ->
@@ -181,7 +182,8 @@ defmodule AppWeb.ImgupLive do
   end
 
   defp file_to_changeset(file, user) do
-    Url.changeset(%{
+    %Url{}
+    |> Url.changeset(%{
       key: file.key,
       origin_url: file.origin_url,
       compressed_url: file.compressed_url,

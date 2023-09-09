@@ -23,7 +23,6 @@ defmodule AppWeb.NoClientPreloading do
         <ul id="uploaded_files_locally"
           role="list"
           class="divide-y divide-gray-100">
-          <!-- Entry information -->
             <li
               class="uploaded-local-item relative flex justify-between gap-x-6 py-5"
               :for={file<- @uploaded_files_locally}

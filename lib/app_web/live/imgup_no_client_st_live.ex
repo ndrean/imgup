@@ -1,7 +1,3 @@
-defmodule Upload do
-  defstruct [:uuid, :compressed_url, :origin_url]
-end
-
 defmodule AppWeb.ImgupNoClientStLive do
   use AppWeb, :live_view
   alias Vix.Vips.Operation
@@ -10,146 +6,15 @@ defmodule AppWeb.ImgupNoClientStLive do
   @upload_dir Application.app_dir(:app, ["priv", "static", "image_uploads"])
 
   @impl true
-  def render(assigns) do
-    ~H"""
-    <div
-    id="lv_no_client"
-    class="px-4 py-10 sm:px-6 sm:py-28 lg:px-8 xl:px-28 xl:py-32"
-    phx-hook="ScreenSize"
-    >
-    <div class="flex flex-col justify-around md:flex-row">
-    <AppWeb.UploadForm.render uploads={@uploads}/>
-    <%!-- <div class="flex flex-col flex-1 md:mr-4">
-      <!-- Drag and drop -->
-      <div class="space-y-12">
-        <div class="border-gray-900/10 pb-12">
-          <h2 class="text-base font-semibold leading-7 text-gray-900">
-            Image Upload <b>(without file upload from client-side code)</b>
-          </h2>
-          <p class="mt-1 text-sm leading-6 text-gray-400">
-            The files uploaded in this page are not routed from the client. Meaning all file uploads are made in the LiveView code.
-          </p>
-          <p class="mt-1 text-sm leading-6 text-gray-600">
-            Drag your images and they'll be uploaded to the cloud! ☁️
-          </p>
-          <p class="mt-1 text-sm leading-6 text-gray-600">
-            You may add up to <%= @uploads.image_list.max_entries %> exhibits at a time.
-          </p>
-          <!-- File upload section -->
-          <form
-            class="mt-10 grid grid-cols-1 gap-x-6 gap-y-8"
-            phx-change="validate"
-            phx-submit="save"
-            id="upload-form"
-          >
-            <div class="col-span-full">
-              <div
-                class="mt-2 flex justify-center rounded-lg border border-dashed border-gray-900/25 px-6 py-10"
-                phx-drop-target={@uploads.image_list.ref}
-              >
-                <div class="text-center">
-                  <svg
-                    class="mx-auto h-12 w-12 text-gray-300"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M1.5 6a2.25 2.25 0 012.25-2.25h16.5A2.25 2.25 0 0122.5 6v12a2.25 2.25 0 01-2.25 2.25H3.75A2.25 2.25 0 011.5 18V6zM3 16.06V18c0 .414.336.75.75.75h16.5A.75.75 0 0021 18v-1.94l-2.69-2.689a1.5 1.5 0 00-2.12 0l-.88.879.97.97a.75.75 0 11-1.06 1.06l-5.16-5.159a1.5 1.5 0 00-2.12 0L3 16.061zm10.125-7.81a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                  <div class="mt-4 flex text-sm leading-6 text-gray-600">
-                    <label
-                      for="file-upload"
-                      class="relative cursor-pointer rounded-md bg-white font-semibold text-indigo-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-600 focus-within:ring-offset-2 hover:text-indigo-500"
-                    >
-                      <div>
-                        <label class="cursor-pointer">
-                          <.live_file_input upload={@uploads.image_list} class="hidden" /> Upload
-                        </label>
-                      </div>
-                    </label>
-                    <p class="pl-1">or drag and drop</p>
-                  </div>
-                  <p class="text-xs leading-5 text-gray-600">PNG, JPG, GIF up to 10MB</p>
-                </div>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div> --%>
-
-    <div class="flex flex-col flex-1 mt-10 md:mt-0 md:ml-4">
-      <AppWeb.NoClientPreloading.display uploaded_files_locally={@uploaded_files_locally} />
-      <div class="flex flex-col flex-1 mt-10">
-        <h2 class="text-base font-semibold leading-7 text-gray-900">Uploaded files to S3</h2>
-        <p class="mt-1 text-sm leading-6 text-gray-600">
-          Here is the list of uploaded files in S3. 🪣
-        </p>
-
-        <%!-- <p class={"
-          #{if length(@streams.uploaded_files_to_S3) == 0 do "block" else "hidden" end}
-          text-xs leading-7 text-gray-400 text-center my-10"}>
-          No files uploaded.
-        </p> --%>
-
-        <ul
-          phx-update="stream"
-          id="uploaded_files_S3"
-          role="list"
-          class="divide-y divide-gray-100"
-        >
-          <!-- Entry information -->
-          <li
-            :for={{dom_id, file} <- @streams.uploaded_files_to_S3}
-            id={dom_id}
-            class="uploaded-s3-item relative flex justify-between gap-x-6 py-5"
-          >
-
-            <div :if={Map.has_key?(file, :compressed_url) && Map.has_key?(file, :origin_url)} class="flex gap-x-4">
-              <div class="min-w-0 flex-auto">
-                <p>
-                  <a
-                    class="text-sm leading-6 break-all underline text-indigo-600"
-                    href={file.origin_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <img
-                      class="block max-w-12 max-h-12 w-auto h-auto flex-none bg-gray-50"
-                      src={file.compressed_url}
-                      onerror="imgError(this);"
-                    />
-                  </a>
-                </p>
-                </div>
-              </div>
-            <div class="flex items-center justify-end gap-x-6">
-            <.button type="button" phx-click="delete-uploaded" phx-value-key={dom_id} phx-value-origin={file.origin_url} phx-value-thumb={file.compressed_url}>
-              <.icon name="hero-trash"/>
-            </.button>
-            </div>
-          </li>
-        </ul>
-      </div>
-    </div>
-    </div>
-    </div>
-
-    """
-  end
-
-  @impl true
-  def mount(_params, _session, socket) do
+  def mount(_, %{"user_token" => user_token}, socket) do
     File.mkdir_p(@upload_dir)
 
     socket =
       socket
+      |> assign_new(:current_user, fn ->
+        App.Accounts.get_user_by_session_token(user_token)
+      end)
       |> assign(:uploaded_files_locally, [])
-      # |> assign(:uploaded_files_to_S3, [])
       |> allow_upload(:image_list,
         accept: ~w(image/*),
         max_entries: 10,
@@ -181,20 +46,21 @@ defmodule AppWeb.ImgupNoClientStLive do
       consume_uploaded_entry(socket, entry, fn %{path: path} ->
         client_name = clean_name(entry.client_name)
         # Copying the file from temporary system folder to static folder
-        dest_file = build_dest(client_name)
+        dest_path = build_path(client_name)
 
         File.stream!(path, [], 64_000)
-        |> Stream.into(File.stream!(dest_file))
+        |> Stream.into(File.stream!(dest_path))
         |> Stream.run()
 
         ext = Path.extname(client_name)
-        compressed_name = comp_name(client_name)
-        comp_dest = build_dest(compressed_name)
         pid = self()
 
-        Task.start(fn -> compress_image(pid, dest_file, comp_dest, entry.uuid, ext) end)
+        Task.start(fn ->
+          compress_image(pid, client_name, entry.uuid, ext)
+        end)
 
         # Adding properties to the entry.
+        # image_url : to render link & img for preload
 
         updated_map = %{
           image_url: set_image_url(client_name),
@@ -209,24 +75,32 @@ defmodule AppWeb.ImgupNoClientStLive do
     {:noreply, update(socket, :uploaded_files_locally, &(&1 ++ [uploaded_file]))}
   end
 
-  def compress_image(pid, dest_file, comp_dest, uuid, ".png") do
-    case Operation.thumbnail(dest_file, 100) do
-      # case Image.new_from_file(dest) do
+  @doc """
+  Saves on server in "/image_uploads" the thumbnail file
+  """
+  def compress_image(pid, client_name, uuid, ".png") do
+    dest_path = build_path(client_name)
+    thumb_path = thumb_name(client_name) |> build_path()
+
+    case Operation.thumbnail(dest_path, 100) do
       {:ok, img} ->
-        Operation.pngsave(img, comp_dest, compression: 9)
-        send(pid, {:compressed, comp_dest, uuid})
+        Operation.pngsave(img, thumb_path, compression: 9)
+        send(pid, {:compression_op, thumb_path, uuid})
 
       {:error, msg} ->
         send(pid, {:compressed_error, msg})
     end
   end
 
-  def compress_image(pid, dest_file, comp_dest, uuid, ext) when ext in [".jpg", ".jpeg"] do
-    # case Image.new_from_file(dest) do
-    case Operation.thumbnail(dest_file, 100) do
+  def compress_image(pid, client_name, uuid, ext)
+      when ext in [".jpg", ".jpeg"] do
+    dest_path = build_path(client_name)
+    thumb_path = thumb_name(client_name) |> build_path()
+
+    case Operation.thumbnail(dest_path, 100) do
       {:ok, img} ->
-        Operation.jpegsave(img, comp_dest, Q: 7)
-        send(pid, {:compressed, comp_dest, uuid})
+        Operation.jpegsave(img, thumb_path, Q: 7)
+        send(pid, {:compression_op, thumb_path, uuid})
 
       {:error, msg} ->
         send(pid, {:compressed_error, msg})
@@ -237,14 +111,15 @@ defmodule AppWeb.ImgupNoClientStLive do
     send(pid, {:compressed_error, "format not handled"})
   end
 
+  # callback from "thumbnailing" operation to update the socket
   @impl true
   def handle_info({:compressed_error, msg}, socket) do
     {:noreply, put_flash(socket, :error, inspect(msg))}
   end
 
-  # update the socket once the compression is done
+  # update the socket once the compression is done with the thumbnail path
   @impl true
-  def handle_info({:compressed, path, uuid}, socket) do
+  def handle_info({:compression_op, path, uuid}, socket) do
     local_images = socket.assigns.uploaded_files_locally
     img = find_image(local_images, uuid)
     img = Map.put(img, :compressed_path, path)
@@ -257,14 +132,32 @@ defmodule AppWeb.ImgupNoClientStLive do
      )}
   end
 
-  # callback from successfull upload to S3 to update the stream
+  # callback from successfull upload to S3 to update the stream and the db
   @impl true
   def handle_info({:bucket_success, map}, socket) do
-    new_file =
-      %Phoenix.LiveView.UploadEntry{}
+    alias App.Gallery.Url
+
+    data =
+      Map.new()
       |> Map.put(:origin_url, map.origin_url)
       |> Map.put(:compressed_url, map.compressed_url)
       |> Map.put(:uuid, map.uuid)
+
+    new_file =
+      %Phoenix.LiveView.UploadEntry{}
+      |> Map.merge(data)
+
+    # |> Map.put(:origin_url, map.origin_url)
+    # |> Map.put(:compressed_url, map.compressed_url)
+    # |> Map.put(:uuid, map.uuid)
+
+    current_user = socket.assigns.current_user |> dbg()
+    data = Map.put(data, :user_id, current_user.id)
+
+    %Url{}
+    |> Url.changeset(data)
+    |> App.Repo.insert()
+    |> dbg()
 
     {:noreply, stream_insert(socket, :uploaded_files_to_S3, new_file)}
   end
@@ -277,13 +170,38 @@ defmodule AppWeb.ImgupNoClientStLive do
 
   # callback from successfull deletion from bucket
   @impl true
-  def handle_info({:success_deletion_from_bucket, dom_id}, socket) do
+  def handle_info({:success_deletion_from_bucket, dom_id, uuid}, socket) do
+    alias App.Repo
+    alias App.Gallery.Url
     IO.puts("success_deletion_from_bucket")
 
-    {:noreply,
-     socket
-     |> put_flash(:info, "Sucessfully deleted from bucket")
-     |> stream_delete_by_dom_id(:uploaded_files_to_S3, dom_id)}
+    transaction =
+      Repo.transaction(fn repo ->
+        data = repo.get_by(Url, %{uuid: uuid})
+
+        case data do
+          nil ->
+            {:error, :not_found_in_database}
+
+          data ->
+            repo.delete(data)
+        end
+      end)
+
+    case transaction do
+      {:ok, {:ok, _}} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Sucessfully deleted from bucket")
+         |> stream_delete_by_dom_id(:uploaded_files_to_S3, dom_id)}
+
+      {:ok, {:error, msg}} ->
+        Logger.warning(inspect(msg))
+
+        {:noreply,
+         socket
+         |> put_flash(:error, "Object deleted from the bucket but Database error")}
+    end
   end
 
   # callback from deletion failure from bucket
@@ -319,7 +237,7 @@ defmodule AppWeb.ImgupNoClientStLive do
     # Create 1) original file object and 2) thumbnail/compressed file object to upload
     file =
       %{
-        path: build_dest(client_name),
+        path: build_path(client_name),
         content_type: client_type
       }
 
@@ -354,7 +272,7 @@ defmodule AppWeb.ImgupNoClientStLive do
 
   def handle_event(
         "delete-uploaded",
-        %{"key" => dom_id, "origin" => origin, "thumb" => thumb},
+        %{"key" => dom_id, "origin" => origin, "thumb" => thumb, "uuid" => uuid},
         socket
       ) do
     bucket = bucket()
@@ -375,7 +293,7 @@ defmodule AppWeb.ImgupNoClientStLive do
 
     case length(check_list) do
       0 ->
-        send(pid, {:success_deletion_from_bucket, dom_id})
+        send(pid, {:success_deletion_from_bucket, dom_id, uuid})
 
       _ ->
         send(pid, {:failed_deletion_from_bucket})
@@ -450,11 +368,14 @@ defmodule AppWeb.ImgupNoClientStLive do
     rootname <> ext
   end
 
-  def build_dest(name),
+  # def build_dest(name),
+  #   do: Application.app_dir(:app, ["priv", "static", "image_uploads", name])
+
+  def build_path(name),
     do: Application.app_dir(:app, ["priv", "static", "image_uploads", name])
 
   def thumb_name(name), do: Path.rootname(name) <> "-th" <> Path.extname(name)
-  def comp_name(name), do: Path.rootname(name) <> "-comp" <> Path.extname(name)
+  # def comp_name(name), do: Path.rootname(name) <> "-comp" <> Path.extname(name)
 
   defp bucket do
     Application.get_env(:ex_aws, :original_bucket)
