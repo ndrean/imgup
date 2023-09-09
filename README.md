@@ -56,6 +56,7 @@ using `Phoenix + LiveView`.
 - [_Please_ Star the repo! ⭐️](#please-star-the-repo-️)
   - [Generate authentication with One-Tap](#generate-authentication-with-one-tap)
   - [Join table](#join-table)
+  - [Image sizes](#image-sizes)
 
 <br />
 
@@ -3124,3 +3125,11 @@ dot -Tpng ecto_erd.dot -o erd.png
 ```
 
 ![schema](/erd.png)
+
+## Image sizes
+
+Classes `max-h-16` and `max-w-fit` implies that an image will be downsized to "h-16 == 4rem == 64px" (if 1rem=16px, depending upon the font-size).
+
+If an image of sizes 100x83px (w x h), then it is rendered as 77 x 64px (100 / 83 x 64 = 77)
+
+So if I use say 110 as the parameter in `Image.thumbnail`, its max dim will be 110px. If I have an initial image of size wxh=1096x912, then 1096-> 110 => 912 -> 92 keeping the same ratio. If the class is set to "max-h-24", this is 24 = 24/4=6rem = 6*16px= 96px as max height for a fontSize 16px. Since thumbnail=110 gave a height of 912/1096*110=92, then the browser will render an image 110x92.

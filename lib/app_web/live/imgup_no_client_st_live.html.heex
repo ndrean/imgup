@@ -67,21 +67,19 @@
       </div>
     </div>
 
+    <AppWeb.NoClientPreloading.display uploaded_files_locally={@uploaded_files_locally} />
     <div class="flex flex-col flex-1 mt-10 md:mt-0 md:ml-4">
-      <AppWeb.NoClientPreloading.display uploaded_files_locally={@uploaded_files_locally} />
-      <%!-- <AppWeb.NoClientUploadedFiles.display uploaded_files_to_S3={@streams.uploaded_files_to_S3} /> --%>
-
       <div class="flex flex-col flex-1 mt-10">
         <h2 class="text-base font-semibold leading-7 text-gray-900">Uploaded files to S3</h2>
         <p class="mt-1 text-sm leading-6 text-gray-600">
           Here is the list of uploaded files in S3. 🪣
         </p>
 
-        <%!-- <p class={"
-          #{if length(@streams.uploaded_files_to_S3) == 0 do "block" else "hidden" end}
+        <p class={"
+          #{if length(@uploaded_files_to_S3) == 0 do "block" else "hidden" end}
           text-xs leading-7 text-gray-400 text-center my-10"}>
           No files uploaded.
-        </p> --%>
+        </p>
 
         <ul
           phx-update="stream"

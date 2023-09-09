@@ -42,6 +42,7 @@ defmodule App do
   Get the extension from MIME type
   """
   def get_entry_extension(entry) do
-    entry.client_type |> MIME.extensions() |> hd()
+    # entry.client_type |> MIME.extensions() |> hd()
+    entry.client_name |> Path.extname()
   end
 end

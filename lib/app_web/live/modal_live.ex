@@ -56,7 +56,7 @@ defmodule AppWeb.ModalForm do
         </.input>
         <:actions>
           <.button type="submit">
-            <.icon name="hero-arrow-down-tray" />
+            <.icon name="hero-cloud-arrow-down" />
           </.button>
         </:actions>
       </.simple_form>
@@ -71,7 +71,7 @@ defmodule AppWeb.ModalForm do
   end
 
   @impl true
-  def handle_event("change", %{"input" => input, "key" => _key, "ext" => _ext}, socket) do
+  def handle_event("change", %{"input" => input, "key" => _key}, socket) do
     IO.puts("change-------")
     changeset = Input.create_changeset(input)
 
@@ -149,8 +149,9 @@ defmodule AppWeb.ModalForm do
         %{"input" => %{"name" => name}, "key" => key, "ext" => ext},
         socket
       ) do
+    name = name <> ext
     bucket = bucket()
-    dest = build_dest(name, ext)
+    dest = build_dest(name)
     pid = self()
 
     changeset = Input.create_changeset(%{"name" => name})
@@ -185,7 +186,7 @@ defmodule AppWeb.ModalForm do
     |> Stream.into(File.stream!(dest))
     |> Stream.run()
 
-    send(pid, {:success, :donwload})
+    send(pid, {:success, :download})
   rescue
     e in ExAws.Error ->
       send(pid, {:fail, {:error, inspect(e.message)}})
@@ -220,8 +221,8 @@ defmodule AppWeb.ModalForm do
     assign(socket, :form_dwld, to_form(Input.create_changeset(%{})))
   end
 
-  defp build_dest(name, extension) do
-    Path.join([:code.priv_dir(:app), "static", "image_uploads", "#{name}.#{extension}"])
+  defp build_dest(name) do
+    Path.join([:code.priv_dir(:app), "static", "image_uploads", "#{name}"])
   end
 
   defp bucket do

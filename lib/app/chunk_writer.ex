@@ -11,20 +11,26 @@ defmodule App.ChunkWriter do
 
 
   """
+
+  # Implement `String`.
+
   @impl true
   def init(_opts) do
     {:ok, %{total_size: 0, file: ""}}
   end
 
+  # it sends back the "meta"
   @impl true
   def meta(state), do: state
 
   @impl true
-  def write_chunk(data, state) do
-    {:ok,
-     state
-     |> Map.update!(:total_size, &(&1 + byte_size(data)))
-     |> Map.update!(:file, &(&1 <> data))}
+  def write_chunk(chunk, state) do
+    {
+      :ok,
+      state
+      |> Map.update!(:total_size, &(&1 + byte_size(chunk)))
+      |> Map.update!(:file, &(&1 <> chunk))
+    }
   end
 
   @impl true

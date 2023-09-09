@@ -4,16 +4,19 @@ defmodule AppWeb.ImgupLive do
   alias App.Gallery.Url
   require Logger
 
+  @msg_success_in_uploading "Success in uploading"
+  @msg_sucess_deleting_object_from_bucket "Successfully deleted from the bucket"
+  @msg_success_in_dowloading_file "Success, file saved locally"
+  @msg_error_on_save "An error occured when saving"
+
   @impl true
   def mount(_params, _session, socket) do
-    init_assigns = %{url: ""}
-
     {:ok,
      socket
-     |> assign(init_assigns)
+     |> assign(%{url: ""})
      |> allow_upload(:image_list,
        accept: ~w(image/*),
-       max_entries: 6,
+       max_entries: 10,
        chunk_size: 64_000,
        max_file_size: 5_000_000,
        external: &presign_upload/2
@@ -27,7 +30,8 @@ defmodule AppWeb.ImgupLive do
     bucket_original = bucket_original()
     bucket_compressed = bucket_compressed()
     aws_config = aws_config()
-    key = Cid.cid("#{DateTime.utc_now() |> DateTime.to_iso8601()}_#{entry.client_name}")
+    client_name = clean_name(entry.client_name)
+    key = Cid.cid("#{DateTime.utc_now() |> DateTime.to_iso8601()}_#{client_name}")
 
     {:ok, fields} =
       SimpleS3Upload.sign_form_upload(aws_config, bucket_original,
@@ -44,21 +48,26 @@ defmodule AppWeb.ImgupLive do
         url: "https://#{bucket_original}.s3-#{aws_config.region}.amazonaws.com",
         compressed_url: "https://#{bucket_compressed}.s3-#{aws_config.region}.amazonaws.com",
         fields: fields,
-        ext: App.get_entry_extension(entry)
+        ext: Path.extname(client_name)
       }
 
     {:ok, meta, socket}
   end
 
   # Event handlers -------
+  # for link_patch to display an image when clicked
   @impl true
   def handle_params(%{"url" => url}, _uri, socket) do
-    {:noreply, assign(socket, :url, url)}
+    {:noreply, assign(socket, %{url: url})}
   end
 
   def handle_params(_p, _uri, socket) do
     {:noreply, socket}
   end
+
+  # device screen settings from a JS hook
+  @impl true
+  def handle_event("page-size", p, socket), do: {:noreply, assign(socket, screen: p)}
 
   @impl true
   def handle_event("validate", _params, socket) do
@@ -70,32 +79,35 @@ defmodule AppWeb.ImgupLive do
     {:noreply, cancel_upload(socket, :image_list, ref)}
   end
 
+  # trigger via submit button
   @impl true
   def handle_event("save", _params, socket) do
     current_user = socket.assigns.current_user
 
     uploaded_files =
       consume_uploaded_entries(socket, :image_list, fn %{uploader: _} = meta, _entry ->
-        public_url = meta.url <> "/#{meta.key}"
-        compressed_url = meta.compressed_url <> "/#{meta.key}"
+        # AWS does not accept extension ...?!! so we add one as we may need one further
+        origin_url = meta.url <> "/" <> meta.key
+        compressed_url = meta.compressed_url <> "/" <> meta.key
 
-        meta = Map.put(meta, :public_url, public_url)
-        meta = Map.put(meta, :compressed_url, compressed_url)
-
-        {:ok, meta}
+        {:ok,
+         meta
+         |> Map.put(:origin_url, origin_url)
+         |> Map.put(:compressed_url, compressed_url)
+         |> Map.put(:ext, meta.ext)}
       end)
 
     case save_file_urls(uploaded_files, current_user) do
       {:error, msg} ->
         {:noreply,
          socket
-         |> put_flash(:error, "Something went wrong: #{inspect(msg)}")
+         |> put_flash(:error, @msg_error_on_save <> inspect(msg))
          |> update(:uploaded_files, &(&1 ++ uploaded_files))}
 
       {:ok, _} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Success in uploading")
+         |> put_flash(:info, @msg_success_in_uploading)
          |> update(:uploaded_files, &(&1 ++ uploaded_files))}
     end
   end
@@ -112,7 +124,7 @@ defmodule AppWeb.ImgupLive do
 
   # delete the ref "key" in the database
   def handle_info({:delete, key}, socket) do
-    res =
+    transaction =
       App.Repo.transaction(fn repo ->
         data = repo.get_by(App.Gallery.Url, %{key: key})
 
@@ -125,7 +137,7 @@ defmodule AppWeb.ImgupLive do
         end
       end)
 
-    case res do
+    case transaction do
       {:ok, {:error, msg}} ->
         Logger.warning(inspect(msg))
 
@@ -136,18 +148,18 @@ defmodule AppWeb.ImgupLive do
       {:ok, {:ok, _}} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Successfully deleted from the bucket")
+         |> put_flash(:info, @msg_sucess_deleting_object_from_bucket)
          |> update(:uploaded_files, &Enum.filter(&1, fn file -> file.key != key end))}
     end
   end
 
   # success callback from live_component after local save
   @impl true
-  def handle_info({:success, :donwload}, socket) do
+  def handle_info({:success, :download}, socket) do
     {:noreply,
      socket
      |> App.clear_flash!()
-     |> App.send_flash!(:info, "Success, file saved locally")}
+     |> App.send_flash!(:info, @msg_success_in_dowloading_file)}
   end
 
   # failure callback from live_component after local save
@@ -156,7 +168,7 @@ defmodule AppWeb.ImgupLive do
     {:noreply,
      socket
      |> App.clear_flash!()
-     |> App.send_flash!(:error, "An error occured when saving: #{inspect(msg)}")}
+     |> App.send_flash!(:error, @msg_error_on_save <> inspect(msg))}
   end
 
   # View utilities -------
@@ -171,10 +183,10 @@ defmodule AppWeb.ImgupLive do
   defp file_to_changeset(file, user) do
     Url.changeset(%{
       key: file.key,
-      public_url: file.public_url,
+      origin_url: file.origin_url,
       compressed_url: file.compressed_url,
-      ext: file.ext,
-      user_id: user.id
+      user_id: user.id,
+      ext: file.ext
     })
   end
 
@@ -190,7 +202,7 @@ defmodule AppWeb.ImgupLive do
 
   Produces an insertion of the association user/urls into the database.
 
-  Returns a tuple `{:ok, _}` or `{}:error, _}`
+  Returns a tuple `{:ok, _}` or `{:error, _}`
   """
   def save_file_urls(uploaded_files, current_user) do
     changesets =
@@ -215,7 +227,7 @@ defmodule AppWeb.ImgupLive do
     Enum.find(changesets, &(&1.valid? == false))
     |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
     |> then(fn errors ->
-      Map.keys(errors) |> Enum.map(&Map.get(errors, &1))
+      Map.keys(errors) |> Enum.map(&Map.get(errors, &1)) |> List.flatten()
     end)
   end
 
@@ -233,6 +245,12 @@ defmodule AppWeb.ImgupLive do
 
   # coveralls-ignore-stop
 
+  def clean_name(name) do
+    ext = Path.extname(name)
+    rootname = name |> Path.rootname() |> String.replace(" ", "") |> String.replace(".", "")
+    rootname <> ext
+  end
+
   # utilities for config
   def aws_region, do: System.get_env("AWS_REGION")
   def aws_access_key_id, do: System.get_env("AWS_ACCESS_KEY_ID")
@@ -248,3 +266,23 @@ defmodule AppWeb.ImgupLive do
     }
   end
 end
+
+# "meta" in the "save" handler
+# %{
+#   fields: %{
+#     "acl" => "public-read",
+#     "content-type" => "image/png",
+#     "key" => "bafkreigzsr7usrayr6k7eta45ym4k5xrdoegiwlvqppuwhafmqx2tx6rcm",
+#     "policy" => "ewogICJleHBpcmF0aW9uIjogIjIwMjMtMDktMDZUMTU6MjQ6NDAuOTEwMDgyWiIsCiAgImNvbmRpdGlvbnMiOiBbCiAgICB7ImJ1Y2tldCI6ICAiZHd5bC1pbWd1cCJ9LAogICAgWyJlcSIsICIka2V5IiwgImJhZmtyZWlnenNyN3VzcmF5cjZrN2V0YTQ1eW00azV4cmRvZWdpd2x2cXBwdXdoYWZtcXgydHg2cmNtIl0sCiAgICB7ImFjbCI6ICJwdWJsaWMtcmVhZCJ9LAogICAgWyJlcSIsICIkQ29udGVudC1UeXBlIiwgImltYWdlL3BuZyJdLAogICAgWyJjb250ZW50LWxlbmd0aC1yYW5nZSIsIDAsIDUwMDAwMDBdLAogICAgeyJ4LWFtei1zZXJ2ZXItc2lkZS1lbmNyeXB0aW9uIjogIkFFUzI1NiJ9LAogICAgeyJ4LWFtei1jcmVkZW50aWFsIjogIkFLSUE1VEg2RkxCWUkyQlo0TzVOLzIwMjMwOTA2L2V1LXdlc3QtMy9zMy9hd3M0X3JlcXVlc3QifSwKICAgIHsieC1hbXotYWxnb3JpdGhtIjogIkFXUzQtSE1BQy1TSEEyNTYifSwKICAgIHsieC1hbXotZGF0ZSI6ICIyMDIzMDkwNlQxNTI0NDBaIn0KICBdCn0K",
+#     "x-amz-algorithm" => "AWS4-HMAC-SHA256",
+#     "x-amz-credential" => "AKIA5TH6FLBYI2BZ4O5N/20230906/eu-west-3/s3/aws4_request",
+#     "x-amz-date" => "20230906T152440Z",
+#     "x-amz-server-side-encryption" => "AES256",
+#     "x-amz-signature" => "4036f4e39dec486dbd09391f2f223d2047a27a27eb88935ef5ce6f4c71bdd4a2"
+#   },
+#   key: "bafkreigzsr7usrayr6k7eta45ym4k5xrdoegiwlvqppuwhafmqx2tx6rcm",
+#   url: "https://dwyl-imgup.s3-eu-west-3.amazonaws.com",
+#   compressed_url: "https://dwyl-imgup.s3-eu-west-3.amazonaws.com",
+#   uploader: "S3",
+#   ext: ".png"
+# }

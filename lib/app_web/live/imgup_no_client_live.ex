@@ -1,221 +1,339 @@
 defmodule AppWeb.ImgupNoClientLive do
   use AppWeb, :live_view
-  alias App.ChunkWriter
+  alias Vix.Vips.Operation
   require Logger
 
   @upload_dir Application.app_dir(:app, ["priv", "static", "image_uploads"])
-  @default_opt %{q: 80, r: 0.5, th: 80}
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok,
-     socket
-     |> assign(:uploaded_files_locally, [])
-     |> assign(:uploaded_files_to_S3, [])
-     |> allow_upload(:image_list,
-       accept: ~w(image/*),
-       max_entries: 6,
-       chunk_size: 64_000,
-       auto_upload: true,
-       max_file_size: 5_000_000,
-       progress: &handle_progress/3,
-       writer: fn _, _, _ -> {ChunkWriter, []} end
-       # Do not define presign_upload. This will create a local photo in /vars
-     )}
+    File.mkdir_p(@upload_dir)
+
+    socket =
+      socket
+      |> assign(:uploaded_files_locally, [])
+      |> assign(:uploaded_files_to_S3, [])
+      |> allow_upload(:image_list,
+        accept: ~w(image/*),
+        max_entries: 10,
+        chunk_size: 64_000,
+        auto_upload: true,
+        max_file_size: 5_000_000,
+        progress: &handle_progress/3
+      )
+
+    {:ok, socket}
   end
 
   # With `auto_upload: true`, we can consume files here
-  defp handle_progress(:image_list, entry, socket) when entry.done? == false do
-    # loop until chunk is finished
+  def handle_progress(:image_list, entry, socket) when entry.done? == false do
+    # loop while receiving chunks
     {:noreply, socket}
   end
 
-  defp handle_progress(:image_list, entry, socket) do
+  def handle_progress(:image_list, entry, socket) when entry.done? do
     uploaded_file =
-      consume_uploaded_entry(socket, entry, fn %{file: file, total_size: total_size} ->
-        checked_sum = check_sum(entry.client_size, total_size)
-        ext = App.get_entry_extension(entry)
-        entry = Map.update!(entry, :client_name, fn name -> clean_name(name, ext) end)
+      consume_uploaded_entry(socket, entry, fn %{path: path} ->
+        client_name = clean_name(entry.client_name)
+        # Copying the file from temporary system folder to static folder
+        dest_file = build_dest(client_name)
+
+        File.stream!(path, [], 64_000)
+        |> Stream.into(File.stream!(dest_file))
+        |> Stream.run()
+
+        ext = Path.extname(client_name)
+        compressed_name = comp_name(client_name)
+        comp_dest = build_dest(compressed_name)
         pid = self()
 
-        checked_sum &&
-          Task.start(fn -> transform_image(pid, file, entry, %{q: 70}) end)
+        Task.start(fn -> compress_image(pid, dest_file, comp_dest, entry.uuid, ext) end)
 
-        Logger.info("first render before Task Image________")
+        # Adding properties to the entry.
 
-        {:ok,
-         entry
-         |> Map.put(:thumbnail, nil)
-         |> Map.put(:image_url, nil)
-         |> Map.put(:url_path, nil)
-         |> Map.put(:errors, [])
-         |> Map.update(:errors, [], fn list ->
-           if checked_sum, do: list, else: list ++ ["file truncated"]
-         end)}
+        updated_map = %{
+          image_url: set_image_url(client_name),
+          client_name: client_name,
+          compressed_path: nil,
+          errors: []
+        }
+
+        {:ok, Map.merge(entry, updated_map)}
       end)
 
-    case length(uploaded_file.errors) do
-      0 ->
-        {:noreply, update(socket, :uploaded_files_locally, &(&1 ++ [uploaded_file]))}
+    {:noreply, update(socket, :uploaded_files_locally, &(&1 ++ [uploaded_file]))}
+  end
 
-      _ ->
-        Logger.warning(inspect(uploaded_file.errors))
+  def compress_image(pid, dest_file, comp_dest, uuid, ".png") do
+    case Operation.thumbnail(dest_file, 100) do
+      # case Image.new_from_file(dest) do
+      {:ok, img} ->
+        Operation.pngsave(img, comp_dest, compression: 9)
+        send(pid, {:compressed, comp_dest, uuid})
 
-        {:noreply,
-         socket
-         |> put_flash(:error, inspect(uploaded_file.errors))
-         |> update(:uploaded_files_locally, &(&1 ++ [uploaded_file]))}
+      {:error, msg} ->
+        send(pid, {:compressed_error, msg})
     end
   end
 
-  # Event handlers -------
+  def compress_image(pid, dest_file, comp_dest, uuid, ext) when ext in [".jpg", ".jpeg"] do
+    # case Image.new_from_file(dest) do
+    case Operation.thumbnail(dest_file, 100) do
+      {:ok, img} ->
+        Operation.jpegsave(img, comp_dest, Q: 7)
+        send(pid, {:compressed, comp_dest, uuid})
+
+      {:error, msg} ->
+        send(pid, {:compressed_error, msg})
+    end
+  end
+
+  def compress_image(pid, _, _, _, _) do
+    send(pid, {:compressed_error, "format not handled"})
+  end
+
+  @impl true
+  def handle_info({:compressed_error, msg}, socket) do
+    {:noreply, put_flash(socket, :error, inspect(msg))}
+  end
+
+  # update the socket once the compression is done
+  @impl true
+  def handle_info({:compressed, path, uuid}, socket) do
+    local_images = socket.assigns.uploaded_files_locally
+    img = find_image(local_images, uuid)
+    img = Map.put(img, :compressed_path, path)
+
+    {:noreply,
+     socket
+     |> update(
+       :uploaded_files_locally,
+       &find_and_replace(&1, uuid, img)
+     )}
+  end
+
+  # payload is:
+  # %{
+  #   source: :compressed or :original,
+  #   url: "https://s3.eu-west-3.amazonaws.com/....jpg",
+  #   uuid: "32e6056e-52d8-4f88-8c7c-321388ec88d6"
+  # }
+
+  # success callback from "upload" for compressed file: merge with "original" file data
+  @impl true
+  def handle_info({:bucket_success, %{source: :original} = payload}, socket) do
+    IO.puts("original")
+    %{url: url, uuid: uuid} = payload
+    # clean temporary list display
+    local_images = socket.assigns.uploaded_files_locally
+    img = find_image(local_images, uuid)
+
+    updated_local_array =
+      if img,
+        do: List.delete(local_images, img),
+        else: local_images
+
+    # update remote uploaded list
+    body = %{origin_url: url, compressed_url: nil, uuid: uuid}
+    remote_images = socket.assigns.uploaded_files_to_S3
+
+    updated_list =
+      case Enum.find_index(remote_images, &(&1.uuid == uuid)) do
+        nil -> [body | remote_images]
+        id -> List.update_at(remote_images, id, &Map.merge(&1, %{origin_url: url}))
+      end
+
+    socket =
+      socket
+      |> assign(:uploaded_files_to_S3, updated_list)
+      |> assign(:uploaded_files_locally, updated_local_array)
+
+    {:noreply, socket}
+  end
+
+  # success callback from "upload" for compressed file: merge with "original" file data
+  @impl true
+  def handle_info({:bucket_success, %{source: :compressed} = payload}, socket) do
+    IO.puts("compressed")
+    %{url: url, uuid: uuid} = payload
+    # clean temporary list display
+    local_images = socket.assigns.uploaded_files_locally
+    img = find_image(local_images, uuid)
+
+    updated_local_array =
+      if img,
+        do: List.delete(socket.assigns.uploaded_files_locally, img),
+        else: local_images
+
+    # update remote uploaded list
+    body = %{origin_url: nil, compressed_url: url, uuid: uuid}
+
+    remote_images =
+      socket.assigns.uploaded_files_to_S3
+
+    updated_list =
+      case Enum.find_index(remote_images, &(&1.uuid == uuid)) do
+        nil -> [body | remote_images]
+        id -> List.update_at(remote_images, id, &Map.merge(&1, %{compressed_url: url}))
+      end
+
+    socket =
+      assign(socket, %{
+        uploaded_files_to_S3: updated_list,
+        uploaded_files_locally: updated_local_array
+      })
+
+    {:noreply, socket}
+  end
+
+  # error callback from the "upload"
+  @impl true
+  def handle_info({:bucket_error, reason, uuid}, socket) do
+    Logger.debug(inspect(reason))
+    # Update the failed local file element to show an error message
+    local_images = socket.assigns.uploaded_files_locally
+    file_element = find_image(local_images, uuid)
+    index = Enum.find_index(local_images, &(&1 == file_element))
+    updated_file_element = Map.put(file_element, :errors, ["#{reason}"])
+
+    updated_local_array =
+      List.replace_at(local_images, index, updated_file_element)
+
+    {:noreply, assign(socket, :uploaded_files_locally, updated_local_array)}
+    {:noreply, put_flash(socket, :error, "error from bucket")}
+  end
+
+  # response to the JS hook to capture page size
+  @impl true
+  def handle_event("page-size", p, socket) do
+    {:noreply, assign(socket, :screen, p)}
+  end
 
   @impl true
   def handle_event("validate", _params, socket) do
     {:noreply, socket}
   end
 
+  # trigger by the "upload" button
   @impl true
-  def handle_event("upload_to_s3", params, socket) do
-    IO.puts("upload")
+  def handle_event("upload_to_s3", %{"uuid" => uuid}, socket) do
     # Get file element from the local files array
-    file_element =
-      Enum.find(socket.assigns.uploaded_files_locally, fn %{uuid: uuid} ->
-        uuid == Map.get(params, "uuid")
-      end)
+    %{
+      client_name: client_name,
+      client_type: client_type,
+      compressed_path: compressed_path,
+      uuid: uuid
+    } =
+      find_image(socket.assigns.uploaded_files_locally, uuid)
 
-    # Create file object to upload
-    file = %{
-      path: @upload_dir <> "/" <> Map.get(file_element, :client_name),
-      content_type: file_element.client_type,
-      filename: file_element.client_name
+    # Create original file object and compressed file object to upload
+    file =
+      %{
+        path: build_dest(client_name),
+        content_type: client_type
+      }
+
+    file_comp = %{
+      path: compressed_path,
+      content_type: client_type
     }
 
-    # Upload file
-    case App.Upload.upload(file) do
-      # If the upload succeeds...
-      {:ok, body} ->
-        # We add the `uuid` to the object to display on the view template.
-        body = Map.put(body, :uuid, file_element.uuid)
+    # run HTTP call concurrently
+    pid = self()
+    Task.start(fn -> upload(pid, file, uuid, :original) end)
+    Task.start(fn -> upload(pid, file_comp, uuid, :compressed) end)
 
-        # Delete the file locally
-        File.rm!(file.path)
-
-        # Update the socket accordingly
-        updated_local_array = List.delete(socket.assigns.uploaded_files_locally, file_element)
-
-        socket = update(socket, :uploaded_files_to_S3, &(&1 ++ [body]))
-        socket = assign(socket, :uploaded_files_locally, updated_local_array)
-
-        {:noreply, socket}
-
-      # If the upload fails...
-      {:error, reason} ->
-        # Update the failed local file element to show an error message
-        index = Enum.find_index(socket.assigns.uploaded_files_locally, &(&1 == file_element))
-        updated_file_element = Map.put(file_element, :errors, ["#{reason}"])
-
-        updated_local_array =
-          List.replace_at(socket.assigns.uploaded_files_locally, index, updated_file_element)
-
-        {:noreply, assign(socket, :uploaded_files_locally, updated_local_array)}
-    end
+    {:noreply, socket}
   end
 
-  def transform_image(pid, file, entry, opts \\ @default_opt) do
-    alias Vix.Vips.Image
-    alias Vix.Vips.Operation
-
-    {q, r, th} = get_transform_opts(opts)
-
-    case Image.new_from_buffer(file) do
-      {:error, msg} ->
-        {:error, msg}
-
-      {:ok, img} ->
-        try do
-          # w = Image.width(img) |> to_string()
-          filename = entry.client_name
-          dest_name = build_dest(filename)
-          :ok = Image.write_to_file(img, "#{dest_name}[Q=#{q}]")
-
-          resized_name = "small-#{filename}" |> build_dest()
-
-          :ok =
-            Operation.resize!(img, r) |> Image.write_to_file(resized_name)
-
-          thumb_name = "thumb-#{filename}" |> build_dest()
-
-          :ok =
-            Operation.thumbnail!(dest_name, th)
-            |> Image.write_to_file(thumb_name)
-
-          send(pid, {:update, filename, "thumb-#{filename}", entry.uuid})
-        rescue
-          e ->
-            Logger.warning(inspect(e.message))
-            send(pid, {:error, :file_not_transformed})
-        end
-    end
-  end
-
-  # callback from the `transform_image` Task in case of error
   @impl true
-  def handle_info({:error, :file_not_transformed}, socket),
-    do: {:noreply, put_flash(socket, :error, "Picture not transformed")}
-
-  @impl true
-  def handle_info({:update, filename, thumb_name, uuid}, socket) do
-    new_url_path =
-      build_url_path(thumb_name)
-
-    new_thumbnail =
-      build_image_url(thumb_name)
-
-    new_image_url = build_image_url(filename)
-
-    Logger.info("Render Update after Image___________")
-
+  def handle_event("remove-selected", %{"key" => uuid}, socket) do
     {:noreply,
      socket
-     |> update(
-       :uploaded_files_locally,
-       &update_file_at_uuid(&1, uuid, new_image_url, new_thumbnail, new_url_path)
-     )}
+     |> update(:uploaded_files_locally, &Enum.filter(&1, fn img -> img.uuid != uuid end))}
   end
 
-  @doc """
-  Takes the option map that defaults to `@default_opt`.
+  def upload(pid, file, uuid, atom) do
+    case App.Upload.upload(file) do
+      {:ok, body} ->
+        File.rm!(file.path)
+        send(pid, {:bucket_success, Map.merge(body, %{uuid: uuid, source: atom})})
 
-  Defines the compression quality `q`, the resizing factor `r`, the thumbnail size `th`
-  """
-  def get_transform_opts(opts),
-    do:
-      {Map.get(opts, :q, @default_opt.q), Map.get(opts, :r, @default_opt.r),
-       Map.get(opts, :th, @default_opt.th)}
-
-  def check_sum(entry_size, chunked_size), do: entry_size == chunked_size
-
-  defp build_dest(name),
-    do: Path.join([:code.priv_dir(:app), "static", "image_uploads", "#{name}"])
-
-  def clean_name(name, ext) do
-    n = name |> String.replace(" ", "") |> String.replace(".", "")
-    n <> "." <> ext
+      {:error, msg} ->
+        send(pid, {:bucket_error, msg, uuid})
+    end
   end
 
-  def update_file_at_uuid(files, uuid, new_image_url, new_thumbnail, new_url_path),
-    do:
-      Enum.map(files, fn el ->
-        if el.uuid == uuid,
-          do: %{el | thumbnail: new_thumbnail, image_url: new_image_url, url_path: new_url_path},
-          else: el
-      end)
+  # utilities
+  def find_and_replace(images, uuid, img) do
+    Enum.map(images, fn image -> if image.uuid == uuid, do: img, else: image end)
+  end
 
-  def build_url_path(name), do: AppWeb.Endpoint.static_path("/#{name}")
+  def find_image(images, img_uuid) do
+    Enum.find(images, fn %{uuid: uuid} ->
+      uuid == img_uuid
+    end)
+  end
 
-  def build_image_url(name),
-    do:
-      AppWeb.Endpoint.url() <>
-        AppWeb.Endpoint.static_path("/image_uploads/#{name}")
+  def set_image_url(name) do
+    AppWeb.Endpoint.url() <>
+      AppWeb.Endpoint.static_path("/image_uploads/#{name}")
+  end
+
+  def url_path(name) do
+    AppWeb.Endpoint.static_path("/image_uploads/#{name}")
+  end
+
+  def clean_name(name) do
+    ext = Path.extname(name)
+    rootname = name |> Path.rootname() |> String.replace(" ", "") |> String.replace(".", "")
+    rootname <> ext
+  end
+
+  def build_dest(name),
+    do: Application.app_dir(:app, ["priv", "static", "image_uploads", name])
+
+  def thumb_name(name), do: Path.rootname(name) <> "-th" <> Path.extname(name)
+  def comp_name(name), do: Path.rootname(name) <> "-comp" <> Path.extname(name)
 end
+
+# entry -
+# %Phoenix.LiveView.UploadEntry{
+#   progress: 100,
+#   preflighted?: true,
+#   upload_config: :image_list,
+#   upload_ref: "phx-F4Ieh9a692sakgnC",
+#   ref: "0",
+#   uuid: "eed07cd0-e686-4ba7-b405-02f1304478c7",
+#   valid?: true,
+#   done?: true,
+#   cancelled?: false,
+#   client_name: "Screenshot 2023-09-04 at 14.56.47.png",
+#   client_relative_path: "",
+#   client_size: 594354,
+#   client_type: "image/png",
+#   client_last_modified: 1693832212932
+# }
+
+# file_element
+# %{
+#   progress: 100,
+#   __struct__: Phoenix.LiveView.UploadEntry,
+#   errors: [],
+#   valid?: true,
+#   ref: "0",
+#   client_size: 2504782,
+#   client_name: "action.jpg",
+#   client_type: "image/jpeg",
+#   uuid: "38809d8d-e080-4f14-a137-13e50cd23c56",
+#   compressed_path: "/Users/nevendrean/code/elixir/imgup/_build/dev/lib/app/priv/static/image_uploads/action-comp.jpg",
+#   done?: true,
+#   image_url: "http://localhost:4000/image_uploads/action.jpg",
+#   compressed_name: "action-comp.jpg",
+#   upload_ref: "phx-F4JGIKN9v6ORWQXC",
+#   preflighted?: true,
+#   upload_config: :image_list,
+#   cancelled?: false,
+#   client_last_modified: 1693731232407,
+#   client_relative_path: ""
+# }

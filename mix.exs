@@ -29,7 +29,7 @@ defmodule App.MixProject do
   def application do
     [
       mod: {App.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      extra_applications: [:logger, :runtime_tools, :observer, :wx]
     ]
   end
 
@@ -65,7 +65,7 @@ defmodule App.MixProject do
       {:sobelow, "~> 0.11.1", only: [:dev]},
       {:ecto_erd, "~> 0.5.1", only: [:dev]},
       {:vix, "~> 0.5"},
-      {:image, "~> 0.37"},
+      # {:image, "~> 0.37"},
 
       # Cid
       {:excid, "~> 1.0.1"},

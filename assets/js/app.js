@@ -21,13 +21,14 @@ import "phoenix_html";
 import { Socket } from "phoenix";
 import { LiveSocket } from "phoenix_live_view";
 import topbar from "../vendor/topbar";
+import ScreenSize from "./screenSize.js";
+import InfiniteScroll from "./infiniteScroll";
 
 let Uploaders = {};
 
 Uploaders.S3 = function (entries, onViewError) {
   console.log("S3______", entries);
   entries.forEach((entry) => {
-    console.log({ entry });
     // Creating the form data and getting metadata
     let formData = new FormData();
     let { url, fields } = entry.meta;
@@ -63,6 +64,7 @@ let csrfToken = document
 let liveSocket = new LiveSocket("/live", Socket, {
   uploaders: Uploaders,
   params: { _csrf_token: csrfToken },
+  hooks: { ScreenSize, InfiniteScroll },
 });
 
 // Show progress bar on live navigation and form submits

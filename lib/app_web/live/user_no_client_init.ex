@@ -1,4 +1,4 @@
-defmodule AppWeb.UserLiveInit do
+defmodule AppWeb.UserNoClientInit do
   import Phoenix.LiveView
   import Phoenix.Component
 
@@ -14,7 +14,7 @@ defmodule AppWeb.UserLiveInit do
   # end
 
   def on_mount(:default, _p, %{"user_token" => user_token} = _session, socket) do
-    Logger.info("On mount check")
+    Logger.info("On mount check #{inspect(user_token)}")
 
     socket =
       assign_new(socket, :current_user, fn ->
@@ -41,10 +41,29 @@ defmodule AppWeb.UserLiveInit do
          |> redirect(to: "/")}
 
       true ->
+        # _thumbs = get_thumbs(current_user)
+
+        # res =
+        #   if length(thumbs) > 0,
+        #     do:
+        #       Enum.each(thumbs, fn elt ->
+        #         with {:ok, thumb} <- Map.fetch(elt, :thumbnail),
+        #              {:ok, img} <- Image.open!(thumb, []),
+        #              {:ok, _f} <- Image.write(img, Path.basename(elt)) do
+        #           :ok
+        #         else
+        #           :error ->
+        #             :error
+
+        #           {:error, msg} ->
+        #             inspect(msg)
+        #             :error
+        #         end
+        #       end)
+        #       |> dbg()
+
         socket =
-          assign_new(socket, :uploaded_files, fn ->
-            get_uploads(current_user)
-          end)
+          assign(socket, :uploaded_files_to_S3, [])
 
         {:cont, socket}
     end
@@ -62,10 +81,10 @@ defmodule AppWeb.UserLiveInit do
   defp is_current_user_nil(user), do: user == nil
   defp is_not_confirmed_current_user(user), do: user.confirmed_at == nil
 
-  defp get_uploads(user) do
-    case Gallery.get_urls_by_user(user) do
-      nil -> []
-      list -> list
-    end
-  end
+  # defp get_thumbs(user) do
+  #   case Gallery.get_thumbs_by_user(user) do
+  #     nil -> []
+  #     list -> list
+  #   end
+  # end
 end

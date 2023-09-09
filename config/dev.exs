@@ -81,7 +81,8 @@ config :ex_aws,
   secret_access_key: System.get_env("AWS_SECRET_ACCESS_KEY"),
   region: System.get_env("AWS_REGION"),
   original_bucket: System.get_env("AWS_S3_BUCKET_ORIGINAL"),
-  compressed_bucket: System.get_env("AWS_S3_BUCKET_COMPRESSED"),
-  request_config_override: %{},
-  debug_requests: true,
-  json_codec: Jason
+  request_config_override: %{}
+
+# compressed_bucket: System.get_env("AWS_S3_BUCKET_COMPRESSED"),
+# debug_requests: true,
+# json_codec: Jason

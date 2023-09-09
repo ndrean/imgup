@@ -6,10 +6,10 @@ defmodule App.Upload do
   require Logger
 
   # function gets cached
-  defp compressed_baseurl() do
-    compressed_bucket = Application.get_env(:ex_aws, :compressed_bucket)
-    "https://s3.eu-west-3.amazonaws.com/#{compressed_bucket}/"
-  end
+  # defp compressed_baseurl do
+  #   compressed_bucket = Application.get_env(:ex_aws, :compressed_bucket)
+  #   "https://s3.eu-west-3.amazonaws.com/#{compressed_bucket}/"
+  # end
 
   @doc """
   `upload/1` receives an `image` with the format
@@ -24,7 +24,7 @@ defmodule App.Upload do
   """
   def upload(image) do
     with {:ok, {file_cid, file_extension}} <- check_file_binary_and_extension(image),
-         {:ok, {file_name, upload_response_body}} <-
+         {:ok, {_file_name, upload_response_body}} <-
            upload_file_to_s3(file_cid, file_extension, image) do
       # Sample AWS S3 XML response:
       # %{
@@ -55,14 +55,16 @@ defmodule App.Upload do
       url = upload_response_body.body |> xpath(~x"//text()") |> List.to_string()
 
       # Creating the compressed URL to return as well
-      compressed_url = "#{compressed_baseurl()}#{file_name}"
-      {:ok, %{url: url, compressed_url: compressed_url}}
+      # compressed_url = "#{compressed_baseurl()}#{file_name}"
+      # {:ok, %{url: url, compressed_url: compressed_url}}
+      {:ok, %{url: url}}
     else
       {:error, reason} -> {:error, reason}
     end
   end
 
   def upload_file_to_s3(file_cid, file_extension, image) do
+    alias ExAws.S3
     # Creating filename with the retrieved extension
     file_name = "#{file_cid}.#{file_extension}"
     s3_bucket = Application.get_env(:ex_aws, :original_bucket)
@@ -73,8 +75,8 @@ defmodule App.Upload do
     try do
       {:ok, upload_response_body} =
         image.path
-        |> ExAws.S3.Upload.stream_file()
-        |> ExAws.S3.upload(s3_bucket, file_name,
+        |> S3.Upload.stream_file()
+        |> S3.upload(s3_bucket, file_name,
           acl: :public_read,
           content_type: image.content_type
         )
@@ -88,6 +90,41 @@ defmodule App.Upload do
         {:error, :upload_fail}
     end
   end
+
+  def check_content(file_binary, content_type) do
+    fb = if byte_size(file_binary) == 0, do: [], else: file_binary
+    ct = MIME.extensions(content_type) |> List.first()
+    {fb, ct}
+  end
+
+  # def check_file_binary_and_extension(image) do
+  #   with {:ok, file_binary} <- File.read(image.path),
+  #        {file_cid, file_extension} <- check_content(file_binary, image.content_type) do
+  #     case {file_cid, file_extension} do
+  #       {"invalid data type", nil} ->
+  #         Logger.error(
+  #           "File extension is invalid and the CID derived from the file contents is also invalid: #{inspect(image)}"
+  #         )
+
+  #         {:error, :invalid_extension_and_cid}
+
+  #       {"invalid data type", _extension} ->
+  #         Logger.error("The CID derived from the file contents is invalid: #{inspect(image)}")
+  #         {:error, :invalid_cid}
+
+  #       {_cid, nil} ->
+  #         Logger.error("File extension is invalid: #{inspect(image)}")
+  #         {:error, :invalid_extension}
+
+  #       {file_cid, file_extension} ->
+  #         {:ok, {file_cid, file_extension}}
+  #     end
+  #   else
+  #     {:error, reason} ->
+  #       Logger.error("Problem reading file: #{inspect(reason)}")
+  #       {:error, :failure_read}
+  #   end
+  # end
 
   def check_file_binary_and_extension(image) do
     case File.read(image.path) do

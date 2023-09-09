@@ -22,7 +22,7 @@ defmodule AppWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
-    live "/liveview_clientless", ImgupNoClientLive
+    live "/liveview_clientless", ImgupNoClientStLive
   end
 
   # Other scopes may use custom stacks.

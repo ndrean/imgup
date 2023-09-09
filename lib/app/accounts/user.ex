@@ -8,9 +8,15 @@ defmodule App.Accounts.User do
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
     field :confirmed_at, :naive_datetime
+    field :img, :binary
     has_many :urls, App.Gallery.Url
 
     timestamps()
+  end
+
+  def img_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:img])
   end
 
   @doc """
