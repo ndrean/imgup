@@ -231,17 +231,6 @@ defmodule AppWeb.ImgupNoClientStLive do
   end
 
   @impl true
-  def handle_info({:DOWN, _, _, _, {:timeout, {Task.Supervised, :stream, [5000]}}}, socket) do
-    socket.assigns.files_monitored
-    |> Enum.each(&File.rm!(&1.path))
-
-    {:noreply,
-     socket
-     |> assign(:files_monitored, [])
-     |> put_flash(:error, @timeout_bucket)}
-  end
-
-  @impl true
   def handle_event("load-more", _, socket) do
     {:noreply,
      socket
@@ -287,16 +276,15 @@ defmodule AppWeb.ImgupNoClientStLive do
     # concurrently upload the 2 files to the bucket
     pid = self()
 
-    # Process.flag(:trap_exit, true)
-    {:ok, pid} = Task.start(fn -> upload(pid, file, file_comp, uuid) end)
-    Process.monitor(pid)
+    {:ok, _pid} = Task.start(fn -> upload(pid, file, file_comp, uuid) end)
+    # Process.monitor(pid)
 
-    files_monitored = [file, file_comp]
+    # files_monitored = [file, file_comp]
 
     {
       :noreply,
       socket
-      |> assign(:files_monitored, files_monitored)
+      # |> assign(:files_monitored, files_monitored)
       |> update(:uploaded_files_locally, fn list -> Enum.filter(list, &(&1.uuid != uuid)) end)
     }
   end
@@ -350,7 +338,7 @@ defmodule AppWeb.ImgupNoClientStLive do
 
   def upload(pid, file, file_comp, uuid) do
     [file, file_comp]
-    |> Task.async_stream(&App.Upload.upload/1)
+    |> Task.async_stream(&App.Upload.upload/1, on_timeout: :kill_task)
     |> Enum.map(&handle_async_result/1)
     |> Enum.reduce([], fn res, acc ->
       case res do
@@ -359,22 +347,36 @@ defmodule AppWeb.ImgupNoClientStLive do
 
         {:error, msg} ->
           Logger.warning("upload" <> inspect(msg))
-          {:error, :upload_error}
+          [{:error, :upload_error} | acc]
       end
     end)
-    |> case do
-      {:error, _} ->
-        send(pid, {:upload_error})
-
-      [thumb_url, origin_url] ->
-        send(
-          pid,
-          {:bucket_success, %{origin_url: origin_url, compressed_url: thumb_url, uuid: uuid}}
-        )
-    end
+    |> handle_result(pid, uuid)
 
     File.rm!(file.path)
     File.rm!(file_comp.path)
+  end
+
+  def handle_result([{:error, _}, {:error, _}], pid, _uuid) do
+    send(pid, {:upload_error})
+  end
+
+  def handle_result([url, {:error, _}], pid, _uuid) do
+    ExAws.S3.delete_object(bucket(), Path.basename(url)) |> ExAws.request!()
+    ExAws.S3.list_objects(bucket()) |> ExAws.request!()
+    send(pid, {:upload_error})
+  end
+
+  def handle_result([{:error, _}, url], pid, _uuid) do
+    ExAws.S3.delete_object(bucket(), Path.basename(url)) |> ExAws.request!()
+    ExAws.S3.list_objects(bucket()) |> ExAws.request!()
+    send(pid, {:upload_error})
+  end
+
+  def handle_result([thumb_url, origin_url], pid, uuid) do
+    send(
+      pid,
+      {:bucket_success, %{origin_url: origin_url, compressed_url: thumb_url, uuid: uuid}}
+    )
   end
 
   # transform the map
@@ -382,6 +384,7 @@ defmodule AppWeb.ImgupNoClientStLive do
   def handle_async_result({:ok, {:error, :upload_fail}}), do: {:error, :bucket_error}
   def handle_async_result({:ok, {:error, :failure_read}}), do: {:error, :failure_read}
   def handle_async_result({:error, _msg}), do: {:error, :upload_error}
+  def handle_async_result({:exit, :timeout}), do: {:error, :timeout}
 
   def find_and_replace(images, uuid, img) do
     Enum.map(images, fn image -> if image.uuid == uuid, do: img, else: image end)
