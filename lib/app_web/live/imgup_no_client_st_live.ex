@@ -360,15 +360,23 @@ defmodule AppWeb.ImgupNoClientStLive do
     send(pid, {:upload_error})
   end
 
+  # remove the thumbnail from the bucket
   def handle_result([url, {:error, _}], pid, _uuid) do
-    ExAws.S3.delete_object(bucket(), Path.basename(url)) |> ExAws.request!()
-    ExAws.S3.list_objects(bucket()) |> ExAws.request!()
+    Task.start(fn ->
+      ExAws.S3.delete_object(bucket(), Path.basename(url))
+      |> ExAws.request!()
+    end)
+
     send(pid, {:upload_error})
   end
 
+  # remove the thumbnail from the bucket
   def handle_result([{:error, _}, url], pid, _uuid) do
-    ExAws.S3.delete_object(bucket(), Path.basename(url)) |> ExAws.request!()
-    ExAws.S3.list_objects(bucket()) |> ExAws.request!()
+    Task.start(fn ->
+      ExAws.S3.delete_object(bucket(), Path.basename(url))
+      |> ExAws.request!()
+    end)
+
     send(pid, {:upload_error})
   end
 
