@@ -14,34 +14,49 @@ defmodule AppWeb.ImgupNoClientStLive do
   @error_saving_in_bucket "Could not save in the bucket"
   @error_in_db_but_deleted_from_bucket "Object deleted in bucket but not found in database"
   @inserted_in_bucket_but_db_failed "Object save in bucket but failed in db"
+  @timeout_bucket "Upload to bucket, timeout"
 
   @impl true
   def mount(_, %{"user_token" => user_token}, socket) do
     File.mkdir_p(@upload_dir)
     current_user = App.Accounts.get_user_by_session_token(user_token)
+    limit = 4
+    page = 0
+    offset = 3
 
     socket =
       socket
       |> assign_new(:current_user, fn -> current_user end)
+      |> assign(:limit, limit)
+      |> assign(:offset, offset)
+      |> assign(:page, page)
       |> assign(:uploaded_files_locally, [])
       |> allow_upload(:image_list,
         accept: ~w(image/*),
         max_entries: 10,
-        chunk_size: 64_000,
+        chunk_size: 128_000,
         auto_upload: true,
-        max_file_size: 5_000_000,
+        max_file_size: 20_000_000,
         progress: &handle_progress/3
       )
       |> stream_configure(:uploaded_files_to_S3, dom_id: &"uploaded-s3-#{&1.uuid}")
-      |> stream(:uploaded_files_to_S3, load_files(current_user), at: -1, limit: 2)
+      |> paginate(page)
+
+    # |> stream(:uploaded_files_to_S3, load_files(current_user, limit, 0), at: -1, limit: 2)
 
     {:ok, socket}
 
     # Do not define presign_upload. This will create a local photo in /vars
   end
 
-  def load_files(current_user) do
-    App.Gallery.get_urls_by_user(current_user)
+  def paginate(socket, page) do
+    %{limit: limit, offset: offset, current_user: current_user} = socket.assigns
+    files = App.Gallery.get_urls_by_user(current_user, limit, page * offset)
+    stream(socket, :uploaded_files_to_S3, files, at: -1)
+  end
+
+  def load_files(current_user, limit, offset) do
+    App.Gallery.get_urls_by_user(current_user, limit, offset)
   end
 
   # With `auto_upload: true`, we can consume files here
@@ -178,8 +193,8 @@ defmodule AppWeb.ImgupNoClientStLive do
   # callback from successfull deletion from bucket
   @impl true
   def handle_info({:success_deletion_from_bucket, dom_id, uuid}, socket) do
-    alias App.Repo
     alias App.Gallery.Url
+    alias App.Repo
 
     Repo.transaction(fn repo ->
       data = repo.get_by(Url, %{uuid: uuid})
@@ -213,6 +228,25 @@ defmodule AppWeb.ImgupNoClientStLive do
   def handle_info({:failed_deletion_from_bucket}, socket) do
     Logger.warning("failed_deletion_from_bucket")
     {:noreply, put_flash(socket, :error, @error_delete_object_in_bucket)}
+  end
+
+  @impl true
+  def handle_info({:DOWN, _, _, _, {:timeout, {Task.Supervised, :stream, [5000]}}}, socket) do
+    socket.assigns.files_monitored
+    |> Enum.each(&File.rm!(&1.path))
+
+    {:noreply,
+     socket
+     |> assign(:files_monitored, [])
+     |> put_flash(:error, @timeout_bucket)}
+  end
+
+  @impl true
+  def handle_event("load-more", _, socket) do
+    {:noreply,
+     socket
+     |> update(:page, &(&1 + 1))
+     |> paginate(socket.assigns.page + 1)}
   end
 
   # response to the JS hook to capture page size
@@ -252,11 +286,17 @@ defmodule AppWeb.ImgupNoClientStLive do
 
     # concurrently upload the 2 files to the bucket
     pid = self()
-    Task.start(fn -> upload(pid, file, file_comp, uuid) end)
+
+    # Process.flag(:trap_exit, true)
+    {:ok, pid} = Task.start(fn -> upload(pid, file, file_comp, uuid) end)
+    Process.monitor(pid)
+
+    files_monitored = [file, file_comp]
 
     {
       :noreply,
       socket
+      |> assign(:files_monitored, files_monitored)
       |> update(:uploaded_files_locally, fn list -> Enum.filter(list, &(&1.uuid != uuid)) end)
     }
   end
@@ -309,11 +349,8 @@ defmodule AppWeb.ImgupNoClientStLive do
   end
 
   def upload(pid, file, file_comp, uuid) do
-    File.rm!(file.path)
-    File.rm!(file_comp.path)
-
     [file, file_comp]
-    |> Task.async_stream(&App.Upload.upload(&1))
+    |> Task.async_stream(&App.Upload.upload/1)
     |> Enum.map(&handle_async_result/1)
     |> Enum.reduce([], fn res, acc ->
       case res do
@@ -335,11 +372,15 @@ defmodule AppWeb.ImgupNoClientStLive do
           {:bucket_success, %{origin_url: origin_url, compressed_url: thumb_url, uuid: uuid}}
         )
     end
+
+    File.rm!(file.path)
+    File.rm!(file_comp.path)
   end
 
   # transform the map
   def handle_async_result({:ok, {:ok, %{url: url}}}), do: {:ok, url}
   def handle_async_result({:ok, {:error, :upload_fail}}), do: {:error, :bucket_error}
+  def handle_async_result({:ok, {:error, :failure_read}}), do: {:error, :failure_read}
   def handle_async_result({:error, _msg}), do: {:error, :upload_error}
 
   def find_and_replace(images, uuid, img) do

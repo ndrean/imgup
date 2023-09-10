@@ -10,6 +10,7 @@ defmodule App.Application do
     children = [
       AppWeb.Telemetry,
       App.Repo,
+      {Task.Supervisor, name: App.TaskSup},
       {Phoenix.PubSub, name: App.PubSub},
       AppWeb.Endpoint
       # Start a worker by calling: App.Worker.start_link(arg)
