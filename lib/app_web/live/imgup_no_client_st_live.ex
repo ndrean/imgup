@@ -1,13 +1,14 @@
 defmodule AppWeb.ImgupNoClientStLive do
   use AppWeb, :live_view
-  alias Vix.Vips.Operation
   alias App.Gallery.Url
   alias App.Repo
+  alias Vix.Vips.Operation
 
   require Logger
 
   @upload_dir Application.app_dir(:app, ["priv", "static", "image_uploads"])
 
+  @unhandled_format "format not handled"
   @delete_bucket_and_db "Sucessfully deleted from bucket and database"
   @error_delete_object_in_bucket "Failed to delete from bucket"
   @error_saving_in_bucket "Could not save in the bucket"
@@ -116,7 +117,7 @@ defmodule AppWeb.ImgupNoClientStLive do
   end
 
   def compress_image(pid, _, _, _, _) do
-    send(pid, {:compressed_error, "format not handled"})
+    send(pid, {:compressed_error, @unhandled_format})
   end
 
   # callback from "thumbnailing" operation to update the socket
@@ -156,14 +157,10 @@ defmodule AppWeb.ImgupNoClientStLive do
     current_user = socket.assigns.current_user
     data = Map.put(data, :user_id, current_user.id)
 
-    transaction =
-      Repo.transaction(fn repo ->
-        %Url{}
-        |> Url.changeset(data)
-        |> repo.insert()
-      end)
-
-    case transaction do
+    %Url{}
+    |> Url.changeset(data)
+    |> Repo.insert()
+    |> case do
       {:ok, _} ->
         {:noreply, stream_insert(socket, :uploaded_files_to_S3, new_file)}
 
@@ -184,20 +181,18 @@ defmodule AppWeb.ImgupNoClientStLive do
     alias App.Repo
     alias App.Gallery.Url
 
-    transaction =
-      Repo.transaction(fn repo ->
-        data = repo.get_by(Url, %{uuid: uuid})
+    Repo.transaction(fn repo ->
+      data = repo.get_by(Url, %{uuid: uuid})
 
-        case data do
-          nil ->
-            {:error, :not_found_in_database}
+      case data do
+        nil ->
+          {:error, :not_found_in_database}
 
-          data ->
-            repo.delete(data)
-        end
-      end)
-
-    case transaction do
+        data ->
+          repo.delete(data)
+      end
+    end)
+    |> case do
       {:ok, {:ok, _}} ->
         {:noreply,
          socket
@@ -263,7 +258,6 @@ defmodule AppWeb.ImgupNoClientStLive do
       :noreply,
       socket
       |> update(:uploaded_files_locally, fn list -> Enum.filter(list, &(&1.uuid != uuid)) end)
-      #  |> stream_insert(:uploaded_files_to_S3, new_file)
     }
   end
 
@@ -302,7 +296,6 @@ defmodule AppWeb.ImgupNoClientStLive do
   # rm files from server when unselected
   @impl true
   def handle_event("remove-selected", %{"key" => uuid}, socket) do
-    #
     %{compressed_path: comp_path, image_url: image_url} =
       socket.assigns.uploaded_files_locally
       |> Enum.find(&(&1.uuid == uuid))
@@ -316,21 +309,23 @@ defmodule AppWeb.ImgupNoClientStLive do
   end
 
   def upload(pid, file, file_comp, uuid) do
-    requests =
-      [file, file_comp]
-      |> Task.async_stream(&App.Upload.upload(&1))
-      |> Enum.map(&handle_async_result/1)
-      |> Enum.reduce([], fn res, acc ->
-        case res do
-          {:ok, url} ->
-            [url | acc]
+    File.rm!(file.path)
+    File.rm!(file_comp.path)
 
-          {:error, _msg} ->
-            {:error, :upload_error}
-        end
-      end)
+    [file, file_comp]
+    |> Task.async_stream(&App.Upload.upload(&1))
+    |> Enum.map(&handle_async_result/1)
+    |> Enum.reduce([], fn res, acc ->
+      case res do
+        {:ok, url} ->
+          [url | acc]
 
-    case requests do
+        {:error, msg} ->
+          Logger.warning("upload" <> inspect(msg))
+          {:error, :upload_error}
+      end
+    end)
+    |> case do
       {:error, _} ->
         send(pid, {:upload_error})
 
@@ -340,13 +335,11 @@ defmodule AppWeb.ImgupNoClientStLive do
           {:bucket_success, %{origin_url: origin_url, compressed_url: thumb_url, uuid: uuid}}
         )
     end
-
-    File.rm!(file.path)
-    File.rm!(file_comp.path)
   end
 
   # transform the map
   def handle_async_result({:ok, {:ok, %{url: url}}}), do: {:ok, url}
+  def handle_async_result({:ok, {:error, :upload_fail}}), do: {:error, :bucket_error}
   def handle_async_result({:error, _msg}), do: {:error, :upload_error}
 
   def find_and_replace(images, uuid, img) do
