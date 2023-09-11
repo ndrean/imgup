@@ -22,14 +22,14 @@ defmodule App.Gallery.Url do
   def changeset(%Url{} = url, attrs) do
     url
     |> cast(attrs, @keys)
-    |> validate_required([:origin_url, :uuid, :user_id])
+    |> validate_required([:origin_url, :user_id])
 
     # |> unique_constraint(:origin_url, name: :urls_origin_url_user_id_index)
   end
 
-  def thumb_changeset(%Url{} = url, attrs) do
-    url
-    |> cast(attrs, @keys)
-    |> validate_required([:user_id, :uuid])
-  end
+  # def thumb_changeset(%Url{} = url, attrs) do
+  #   url
+  #   |> cast(attrs, @keys)
+  #   |> validate_required([:user_id, :uuid])
+  # end
 end

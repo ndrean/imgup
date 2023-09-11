@@ -2,7 +2,7 @@ defmodule AppWeb.UserNoClientInit do
   import Phoenix.LiveView
   import Phoenix.Component
 
-  alias App.{Accounts, Gallery}
+  alias App.Accounts
   require Logger
 
   @moduledoc """

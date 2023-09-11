@@ -7,18 +7,18 @@ defmodule App.Gallery do
 
   import Ecto.Query, warn: false
   alias App.Accounts.User
-  alias App.Gallery.{Url, Thumb}
+  alias App.Gallery.Url
   alias App.Repo
 
-  def get_thumbs_by_user(%User{} = user) do
-    query =
-      from(
-        u in Thumb,
-        where: u.user_id == ^user.id
-      )
+  # def get_thumbs_by_user(%User{} = user) do
+  #   query =
+  #     from(
+  #       u in Thumb,
+  #       where: u.user_id == ^user.id
+  #     )
 
-    Repo.all(query)
-  end
+  #   Repo.all(query)
+  # end
 
   @doc """
   Get URLs associated with a user.

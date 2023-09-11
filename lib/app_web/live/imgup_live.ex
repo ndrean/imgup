@@ -28,14 +28,11 @@ defmodule AppWeb.ImgupLive do
 
   defp presign_upload(entry, socket) do
     uploads = socket.assigns.uploads
-    bucket_original = bucket_original()
-    bucket_compressed = bucket_compressed()
-    aws_config = aws_config()
     client_name = clean_name(entry.client_name)
     key = Cid.cid("#{DateTime.utc_now() |> DateTime.to_iso8601()}_#{client_name}")
 
     {:ok, fields} =
-      SimpleS3Upload.sign_form_upload(aws_config, bucket_original,
+      SimpleS3Upload.sign_form_upload(aws_config(), bucket(),
         key: key,
         content_type: entry.client_type,
         max_file_size: uploads[entry.upload_config].max_file_size,
@@ -46,8 +43,8 @@ defmodule AppWeb.ImgupLive do
       %{
         uploader: "S3",
         key: key,
-        url: "https://#{bucket_original}.s3-#{aws_config.region}.amazonaws.com",
-        compressed_url: "https://#{bucket_compressed}.s3-#{aws_config.region}.amazonaws.com",
+        url: build_uri(),
+        compressed_url: build_uri(),
         fields: fields,
         ext: Path.extname(client_name)
       }
@@ -86,7 +83,7 @@ defmodule AppWeb.ImgupLive do
     current_user = socket.assigns.current_user
 
     uploaded_files =
-      consume_uploaded_entries(socket, :image_list, fn %{uploader: _} = meta, _entry ->
+      consume_uploaded_entries(socket, :image_list, fn %{uploader: _} = meta, entry ->
         # AWS does not accept extension ...?!! so we add one as we may need one further
         origin_url = meta.url <> "/" <> meta.key
         compressed_url = meta.compressed_url <> "/" <> meta.key
@@ -95,7 +92,8 @@ defmodule AppWeb.ImgupLive do
          meta
          |> Map.put(:origin_url, origin_url)
          |> Map.put(:compressed_url, compressed_url)
-         |> Map.put(:ext, meta.ext)}
+         |> Map.put(:ext, meta.ext)
+         |> Map.put(:uuid, entry.uuid)}
       end)
 
     case save_file_urls(uploaded_files, current_user) do
@@ -111,6 +109,45 @@ defmodule AppWeb.ImgupLive do
          |> put_flash(:info, @msg_success_in_uploading)
          |> update(:uploaded_files, &(&1 ++ uploaded_files))}
     end
+  end
+
+  @impl true
+  def handle_event("delete", %{"key" => key} = p, socket) do
+    # case check_if_exists_in_bucket(bucket(), key) do
+    # nil ->
+    # {:noreply, App.send_flash!(socket, :error, "Object not found in the bucket")}
+
+    # _ ->
+    # runs deletion in a Task to ensure that S3 returns a response before the next check
+    Task.async(fn -> ExAws.S3.delete_object(bucket(), key) |> ExAws.request() end)
+    |> Task.await()
+
+    # check that the object is deleted before sending to the LV the order to update
+    # the database and LV state accordingly.
+    case check_if_exists_in_bucket(bucket(), key) do
+      nil ->
+        send(self(), {:delete, key})
+        {:noreply, socket}
+
+      _ ->
+        Logger.warning("Object not deleted")
+        {:noreply, App.send_flash!(socket, :error, "Object not removed from the bucket")}
+    end
+
+    # end
+  end
+
+  @impl true
+  def handle_event("delete", _p, socket) do
+    {:noreply, put_flash(socket, :error, "Cannot find object as created by another mean")}
+  end
+
+  def check_if_exists_in_bucket(bucket, key) do
+    ExAws.S3.list_objects(bucket)
+    |> ExAws.request!()
+    |> get_in([:body, :contents])
+    |> dbg()
+    |> Enum.find(&(&1.key == key))
   end
 
   # handle the flash messages sent from children live_components
@@ -178,6 +215,7 @@ defmodule AppWeb.ImgupLive do
   Return a list of %App.Gallery.Url{} changeset struct based on the files received and the current_user.
   """
   def uploads_changesets(uploaded_files, user) do
+    uploaded_files
     Enum.map(uploaded_files, &file_to_changeset(&1, user))
   end
 
@@ -257,7 +295,7 @@ defmodule AppWeb.ImgupLive do
   def aws_region, do: System.get_env("AWS_REGION")
   def aws_access_key_id, do: System.get_env("AWS_ACCESS_KEY_ID")
   def aws_secret_access_key, do: System.get_env("AWS_SECRET_ACCESS_KEY")
-  def bucket_original, do: Application.get_env(:ex_aws, :original_bucket)
+  def bucket, do: Application.get_env(:ex_aws, :original_bucket)
   def bucket_compressed, do: Application.get_env(:ex_aws, :compressed_bucket)
 
   def aws_config do
@@ -267,6 +305,8 @@ defmodule AppWeb.ImgupLive do
       secret_access_key: aws_secret_access_key()
     }
   end
+
+  def build_uri(), do: "https://#{bucket()}.s3-#{aws_region()}.amazonaws.com"
 end
 
 # "meta" in the "save" handler

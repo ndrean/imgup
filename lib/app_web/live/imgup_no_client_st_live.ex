@@ -20,17 +20,18 @@ defmodule AppWeb.ImgupNoClientStLive do
   def mount(_, %{"user_token" => user_token}, socket) do
     File.mkdir_p(@upload_dir)
     current_user = App.Accounts.get_user_by_session_token(user_token)
-    limit = 4
-    page = 0
-    offset = 3
+
+    init_assigns = %{
+      limit: 4,
+      page: 0,
+      offset: 3,
+      uploaded_files_locally: []
+    }
 
     socket =
       socket
       |> assign_new(:current_user, fn -> current_user end)
-      |> assign(:limit, limit)
-      |> assign(:offset, offset)
-      |> assign(:page, page)
-      |> assign(:uploaded_files_locally, [])
+      |> assign(init_assigns)
       |> allow_upload(:image_list,
         accept: ~w(image/*),
         max_entries: 10,
@@ -40,7 +41,7 @@ defmodule AppWeb.ImgupNoClientStLive do
         progress: &handle_progress/3
       )
       |> stream_configure(:uploaded_files_to_S3, dom_id: &"uploaded-s3-#{&1.uuid}")
-      |> paginate(page)
+      |> paginate(0)
 
     # |> stream(:uploaded_files_to_S3, load_files(current_user, limit, 0), at: -1, limit: 2)
 
@@ -55,9 +56,9 @@ defmodule AppWeb.ImgupNoClientStLive do
     stream(socket, :uploaded_files_to_S3, files, at: -1)
   end
 
-  def load_files(current_user, limit, offset) do
-    App.Gallery.get_limited_urls_by_user(current_user, limit, offset)
-  end
+  # def load_files(current_user, limit, offset) do
+  #   App.Gallery.get_limited_urls_by_user(current_user, limit, offset)
+  # end
 
   # With `auto_upload: true`, we can consume files here
   def handle_progress(:image_list, entry, socket) when entry.done? == false do
