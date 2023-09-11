@@ -36,7 +36,7 @@ defmodule AppWeb.ImgupNoClientStLive do
         max_entries: 10,
         chunk_size: 128_000,
         auto_upload: true,
-        max_file_size: 20_000_000,
+        max_file_size: 5_000_000,
         progress: &handle_progress/3
       )
       |> stream_configure(:uploaded_files_to_S3, dom_id: &"uploaded-s3-#{&1.uuid}")
@@ -51,12 +51,12 @@ defmodule AppWeb.ImgupNoClientStLive do
 
   def paginate(socket, page) do
     %{limit: limit, offset: offset, current_user: current_user} = socket.assigns
-    files = App.Gallery.get_urls_by_user(current_user, limit, page * offset)
+    files = App.Gallery.get_limited_urls_by_user(current_user, limit, page * offset)
     stream(socket, :uploaded_files_to_S3, files, at: -1)
   end
 
   def load_files(current_user, limit, offset) do
-    App.Gallery.get_urls_by_user(current_user, limit, offset)
+    App.Gallery.get_limited_urls_by_user(current_user, limit, offset)
   end
 
   # With `auto_upload: true`, we can consume files here
@@ -294,29 +294,31 @@ defmodule AppWeb.ImgupNoClientStLive do
         %{"key" => dom_id, "origin" => origin, "thumb" => thumb, "uuid" => uuid},
         socket
       ) do
-    bucket = bucket()
     pid = self()
     keys_to_delete = [Path.basename(origin), Path.basename(thumb)]
 
     keys_to_delete
     |> Task.async_stream(fn key ->
-      ExAws.S3.delete_object(bucket, key)
+      ExAws.S3.delete_object(bucket(), key)
       |> ExAws.request!()
     end)
     |> Stream.run()
 
-    check_list =
-      ExAws.S3.list_objects(bucket)
-      |> ExAws.request!()
-      |> Enum.filter(&Enum.member?(keys_to_delete, &1))
+    # verify that objects are removed
+    Task.start(fn ->
+      check_list =
+        ExAws.S3.list_objects(bucket())
+        |> ExAws.request!()
+        |> Enum.filter(&Enum.member?(keys_to_delete, &1))
 
-    case length(check_list) do
-      0 ->
-        send(pid, {:success_deletion_from_bucket, dom_id, uuid})
+      case length(check_list) do
+        0 ->
+          send(pid, {:success_deletion_from_bucket, dom_id, uuid})
 
-      _ ->
-        send(pid, {:failed_deletion_from_bucket})
-    end
+        _ ->
+          send(pid, {:failed_deletion_from_bucket})
+      end
+    end)
 
     {:noreply, socket}
   end
@@ -336,6 +338,7 @@ defmodule AppWeb.ImgupNoClientStLive do
      |> update(:uploaded_files_locally, &Enum.filter(&1, fn img -> img.uuid != uuid end))}
   end
 
+  # In Task.async_stream, use "on_timeout: :kill_task" to intercept the timeout error
   def upload(pid, file, file_comp, uuid) do
     [file, file_comp]
     |> Task.async_stream(&App.Upload.upload/1, on_timeout: :kill_task)
@@ -346,8 +349,7 @@ defmodule AppWeb.ImgupNoClientStLive do
           [url | acc]
 
         {:error, msg} ->
-          Logger.warning("upload" <> inspect(msg))
-          [{:error, :upload_error} | acc]
+          [{:error, msg} | acc]
       end
     end)
     |> handle_result(pid, uuid)
@@ -361,7 +363,9 @@ defmodule AppWeb.ImgupNoClientStLive do
   end
 
   # remove the thumbnail from the bucket
-  def handle_result([url, {:error, _}], pid, _uuid) do
+  def handle_result([url, {:error, msg}], pid, _uuid) do
+    Logger.warning("Upload error: " <> inspect(msg))
+
     Task.start(fn ->
       ExAws.S3.delete_object(bucket(), Path.basename(url))
       |> ExAws.request!()
@@ -371,7 +375,9 @@ defmodule AppWeb.ImgupNoClientStLive do
   end
 
   # remove the thumbnail from the bucket
-  def handle_result([{:error, _}, url], pid, _uuid) do
+  def handle_result([{:error, msg}, url], pid, _uuid) do
+    Logger.warning("Upload error: " <> inspect(msg))
+
     Task.start(fn ->
       ExAws.S3.delete_object(bucket(), Path.basename(url))
       |> ExAws.request!()
@@ -392,7 +398,7 @@ defmodule AppWeb.ImgupNoClientStLive do
   def handle_async_result({:ok, {:error, :upload_fail}}), do: {:error, :bucket_error}
   def handle_async_result({:ok, {:error, :failure_read}}), do: {:error, :failure_read}
   def handle_async_result({:error, _msg}), do: {:error, :upload_error}
-  def handle_async_result({:exit, :timeout}), do: {:error, :timeout}
+  def handle_async_result({:exit, :timeout}), do: {:error, @timeout_bucket}
 
   def find_and_replace(images, uuid, img) do
     Enum.map(images, fn image -> if image.uuid == uuid, do: img, else: image end)

@@ -40,7 +40,17 @@ defmodule App.Gallery do
         ```
   """
 
-  def get_urls_by_user(%User{} = user, limit, offset) do
+  def get_urls_by_user(%User{} = user) do
+    query =
+      from(
+        u in Url,
+        where: u.user_id == ^user.id
+      )
+
+    Repo.all(query)
+  end
+
+  def get_limited_urls_by_user(%User{} = user, limit, offset) do
     query =
       from(
         u in Url,
