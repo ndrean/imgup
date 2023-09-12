@@ -38,8 +38,8 @@ defmodule AppWeb.NoClientPreloading do
                       rel="noopener noreferrer"
                     >
                       <img
-                        class="block max-w-fit max-h-24 w-auto h-auto flex-none bg-gray-50"
-                        src={file.image_url}
+                        class="block max-w-fit max-h-48 w-auto h-auto flex-none bg-gray-50"
+                        src={file.compressed_url}
                         alt="thumbnail"
                       />
                     </.link>

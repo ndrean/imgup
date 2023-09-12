@@ -112,7 +112,7 @@ defmodule AppWeb.ImgupLive do
   end
 
   @impl true
-  def handle_event("delete", %{"key" => key} = p, socket) do
+  def handle_event("delete", %{"key" => key}, socket) do
     # case check_if_exists_in_bucket(bucket(), key) do
     # nil ->
     # {:noreply, App.send_flash!(socket, :error, "Object not found in the bucket")}
@@ -215,7 +215,6 @@ defmodule AppWeb.ImgupLive do
   Return a list of %App.Gallery.Url{} changeset struct based on the files received and the current_user.
   """
   def uploads_changesets(uploaded_files, user) do
-    uploaded_files
     Enum.map(uploaded_files, &file_to_changeset(&1, user))
   end
 

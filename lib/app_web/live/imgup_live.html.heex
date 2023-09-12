@@ -1,4 +1,4 @@
-<div id="direct">
+<div id="direct" phx-hook="ScreenSize">
   <%= if @url != "" do %>
     <div id="detail">
       <a download>
@@ -6,11 +6,7 @@
       </a>
     </div>
   <% else %>
-    <div
-      id="lv_imgup"
-      phx-hook="ScreenSize"
-      class="px-4 py-10 sm:px-6 sm:py-28 lg:px-8 xl:px-28 xl:py-32"
-    >
+    <div id="lv_imgup" class="px-4 py-10 sm:px-6 sm:py-28 lg:px-8 xl:px-28 xl:py-32">
       <div class="flex flex-col justify-around md:flex-row">
         <AppWeb.UploadForm.render uploads={@uploads} />
         <%!-- <div class="flex flex-col flex-1 md:mr-4">

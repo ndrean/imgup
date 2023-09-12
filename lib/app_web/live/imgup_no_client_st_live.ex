@@ -2,13 +2,16 @@ defmodule AppWeb.ImgupNoClientStLive do
   use AppWeb, :live_view
   alias App.Gallery.Url
   alias App.Repo
+
+  alias Vix.Vips.Image
   alias Vix.Vips.Operation
 
+  on_mount AppWeb.UserNoClientInit
   require Logger
 
-  @upload_dir Application.app_dir(:app, ["priv", "static", "image_uploads"])
+  # @upload_dir Application.app_dir(:app, ["priv", "static", "image_uploads"])
+  @thumb_size 200
 
-  @unhandled_format "format not handled"
   @delete_bucket_and_db "Sucessfully deleted from bucket and database"
   @error_delete_object_in_bucket "Failed to delete from bucket"
   @error_saving_in_bucket "Could not save in the bucket"
@@ -17,9 +20,8 @@ defmodule AppWeb.ImgupNoClientStLive do
   @timeout_bucket "Upload to bucket, timeout"
 
   @impl true
-  def mount(_, %{"user_token" => user_token}, socket) do
-    File.mkdir_p(@upload_dir)
-    current_user = App.Accounts.get_user_by_session_token(user_token)
+  def mount(_, _, socket) do
+    current_user = socket.assigns.current_user
 
     init_assigns = %{
       limit: 4,
@@ -42,8 +44,7 @@ defmodule AppWeb.ImgupNoClientStLive do
       )
       |> stream_configure(:uploaded_files_to_S3, dom_id: &"uploaded-s3-#{&1.uuid}")
       |> paginate(0)
-
-    # |> stream(:uploaded_files_to_S3, load_files(current_user, limit, 0), at: -1, limit: 2)
+      |> push_event("screen", %{})
 
     {:ok, socket}
 
@@ -55,10 +56,6 @@ defmodule AppWeb.ImgupNoClientStLive do
     files = App.Gallery.get_limited_urls_by_user(current_user, limit, page * offset)
     stream(socket, :uploaded_files_to_S3, files, at: -1)
   end
-
-  # def load_files(current_user, limit, offset) do
-  #   App.Gallery.get_limited_urls_by_user(current_user, limit, offset)
-  # end
 
   # With `auto_upload: true`, we can consume files here
   def handle_progress(:image_list, entry, socket) when entry.done? == false do
@@ -77,11 +74,12 @@ defmodule AppWeb.ImgupNoClientStLive do
         |> Stream.into(File.stream!(dest_path))
         |> Stream.run()
 
-        ext = Path.extname(client_name)
+        # ext = Path.extname(client_name)
         pid = self()
+        screen = socket.assigns.screen
 
         Task.start(fn ->
-          compress_image(pid, client_name, entry.uuid, ext)
+          compress_image(pid, client_name, entry.uuid, screen)
         end)
 
         # Adding properties to the entry.
@@ -89,6 +87,7 @@ defmodule AppWeb.ImgupNoClientStLive do
 
         updated_map = %{
           image_url: set_image_url(client_name),
+          compressed_url: nil,
           client_name: client_name,
           compressed_path: nil,
           errors: []
@@ -103,37 +102,38 @@ defmodule AppWeb.ImgupNoClientStLive do
   @doc """
   Saves on server in "/image_uploads" the thumbnail file
   """
-  def compress_image(pid, client_name, uuid, ".png") do
+  def compress_image(pid, client_name, uuid, screen) do
+    # %{"screenHeight" => h, "screenWidth" => w} = screen
     dest_path = build_path(client_name)
-    thumb_path = thumb_name(client_name) |> build_path()
+    thumb_name = thumb_name(client_name)
 
-    case Operation.thumbnail(dest_path, 100) do
-      {:ok, img} ->
-        Operation.pngsave(img, thumb_path, compression: 9)
-        send(pid, {:compression_op, thumb_path, uuid})
+    thumb_path =
+      thumb_name(client_name)
+      |> build_path()
 
+    resized_name = build_path("resized-" <> client_name)
+
+    with {:ok, img_origin} <- Image.new_from_file(dest_path),
+         scale <- get_scale(screen, img_origin),
+         {:ok, img_thumb} <- Operation.thumbnail(dest_path, @thumb_size),
+         {:ok, img_resized} <- Operation.resize(img_origin, scale),
+         :ok <- Operation.webpsave(img_thumb, thumb_path),
+         :ok <- Operation.pngsave(img_resized, resized_name) do
+      send(pid, {:compression_op, thumb_name, resized_name, uuid})
+    else
       {:error, msg} ->
+        Logger.warning(msg)
         send(pid, {:compressed_error, msg})
     end
   end
 
-  def compress_image(pid, client_name, uuid, ext)
-      when ext in [".jpg", ".jpeg"] do
-    dest_path = build_path(client_name)
-    thumb_path = thumb_name(client_name) |> build_path()
-
-    case Operation.thumbnail(dest_path, 100) do
-      {:ok, img} ->
-        Operation.jpegsave(img, thumb_path, Q: 7)
-        send(pid, {:compression_op, thumb_path, uuid})
-
-      {:error, msg} ->
-        send(pid, {:compressed_error, msg})
-    end
-  end
-
-  def compress_image(pid, _, _, _, _) do
-    send(pid, {:compressed_error, @unhandled_format})
+  def get_scale(screen, img) do
+    %{"screenHeight" => h, "screenWidth" => w} = screen
+    h_origin = Image.height(img)
+    w_origin = Image.width(img)
+    new_h = if h < h_origin, do: h / h_origin, else: 1
+    new_w = if w < w_origin, do: w / w_origin, else: 1
+    min(new_h, new_w)
   end
 
   # callback from "thumbnailing" operation to update the socket
@@ -144,10 +144,17 @@ defmodule AppWeb.ImgupNoClientStLive do
 
   # update the socket once the compression is done with the thumbnail path
   @impl true
-  def handle_info({:compression_op, path, uuid}, socket) do
+  def handle_info({:compression_op, thumb_name, resized_name, uuid}, socket) do
     local_images = socket.assigns.uploaded_files_locally
-    img = find_image(local_images, uuid)
-    img = Map.put(img, :compressed_path, path)
+    resized_url = resized_name |> Path.basename() |> set_image_url()
+
+    img =
+      find_image(local_images, uuid)
+      |> Map.merge(%{
+        compressed_path: build_path(thumb_name),
+        compressed_url: set_image_url(thumb_name),
+        image_url: resized_url
+      })
 
     {:noreply,
      socket
@@ -242,6 +249,8 @@ defmodule AppWeb.ImgupNoClientStLive do
   # response to the JS hook to capture page size
   @impl true
   def handle_event("page-size", p, socket) do
+    # %{"screenHeight" => h, "screenWidth" => w} = p
+    Logger.info(p)
     {:noreply, assign(socket, :screen, p)}
   end
 
@@ -376,15 +385,8 @@ defmodule AppWeb.ImgupNoClientStLive do
   end
 
   # remove the thumbnail from the bucket
-  def handle_result([{:error, msg}, url], pid, _uuid) do
-    Logger.warning("Upload error: " <> inspect(msg))
-
-    Task.start(fn ->
-      ExAws.S3.delete_object(bucket(), Path.basename(url))
-      |> ExAws.request!()
-    end)
-
-    send(pid, {:upload_error})
+  def handle_result([{:error, msg}, url], pid, uuid) do
+    handle_result([url, {:error, msg}], pid, uuid)
   end
 
   def handle_result([thumb_url, origin_url], pid, uuid) do
@@ -429,7 +431,8 @@ defmodule AppWeb.ImgupNoClientStLive do
   def build_path(name),
     do: Application.app_dir(:app, ["priv", "static", "image_uploads", name])
 
-  def thumb_name(name), do: Path.rootname(name) <> "-th" <> Path.extname(name)
+  # def thumb_name(name), do: Path.rootname(name) <> "-th" <> Path.extname(name)
+  def thumb_name(name), do: Path.rootname(name) <> "-th" <> ".webp"
 
   defp bucket do
     Application.get_env(:ex_aws, :original_bucket)

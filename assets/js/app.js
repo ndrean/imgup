@@ -26,7 +26,6 @@ import ScreenSize from "./screenSize.js";
 let Uploaders = {};
 
 Uploaders.S3 = function (entries, onViewError) {
-  console.log("S3______", entries);
   entries.forEach((entry) => {
     // Creating the form data and getting metadata
     let formData = new FormData();
