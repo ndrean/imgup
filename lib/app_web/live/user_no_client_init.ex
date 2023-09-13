@@ -35,13 +35,14 @@ defmodule AppWeb.UserNoClientInit do
          |> put_flash(:error, "You must confirm your account")
          |> redirect(to: "/")}
 
-      # is_not_confirmed_current_user(current_user) ->
-      #   Logger.warning("User not confirmed")
+      is_not_confirmed_current_user(current_user) ->
+        Logger.warning("User not confirmed")
 
-      #   {:halt,
-      #    socket
-      #    |> put_flash(:error, "You must confirm your account")
-      #    |> redirect(to: "/")}
+        #   {:halt,
+        #    socket
+        #    |> put_flash(:error, "You must confirm your account")
+        #    |> redirect(to: "/")}
+        {:cont, socket}
 
       true ->
         socket =
@@ -60,5 +61,5 @@ defmodule AppWeb.UserNoClientInit do
      |> redirect(to: "/")}
   end
 
-  # defp is_not_confirmed_current_user(user), do: user.confirmed_at == nil
+  defp is_not_confirmed_current_user(user), do: user.confirmed_at == nil
 end

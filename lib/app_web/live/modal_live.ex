@@ -36,7 +36,7 @@ defmodule AppWeb.ModalForm do
       </.link>
 
       <.button phx-click="delete" phx-value-key={@file.key} phx-target={@myself}>
-        <.icon name="hero-trash"/>
+        <.icon name="hero-trash" />
       </.button>
       <.simple_form
         id={"dwld-#{@file.key}"}

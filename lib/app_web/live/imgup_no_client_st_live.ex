@@ -21,8 +21,6 @@ defmodule AppWeb.ImgupNoClientStLive do
 
   @impl true
   def mount(_, _, socket) do
-    current_user = socket.assigns.current_user
-
     init_assigns = %{
       limit: 4,
       page: 0,
@@ -32,7 +30,6 @@ defmodule AppWeb.ImgupNoClientStLive do
 
     socket =
       socket
-      |> assign_new(:current_user, fn -> current_user end)
       |> assign(init_assigns)
       |> allow_upload(:image_list,
         accept: ~w(image/*),
@@ -67,9 +64,8 @@ defmodule AppWeb.ImgupNoClientStLive do
     uploaded_file =
       consume_uploaded_entry(socket, entry, fn %{path: path} ->
         client_name = clean_name(entry.client_name)
-        # Copying the file from temporary system folder to static folder
         dest_path = build_path(client_name)
-
+        # Copying the file from temporary system folder to static folder
         File.stream!(path, [], 64_000)
         |> Stream.into(File.stream!(dest_path))
         |> Stream.run()
@@ -85,13 +81,6 @@ defmodule AppWeb.ImgupNoClientStLive do
         # Adding properties to the entry.
         # image_url : to render link & img for preload
 
-        # updated_map = %{
-        #   image_url: set_image_url(client_name),
-        #   compressed_url: nil,
-        #   client_name: client_name,
-        #   compressed_path: nil,
-        #   errors: []
-        # }
         updated_map = %{
           image_url: nil,
           compressed_url: nil,
@@ -107,32 +96,28 @@ defmodule AppWeb.ImgupNoClientStLive do
   end
 
   @doc """
-  Saves on server in "/image_uploads" the thumbnail file
+  Transforms (thumbnail & resize to max screen) into WEBP and saves on server in "/image_uploads"
+
+  The data `%{"screenHeight" => h, "screenWidth" => w} = screen` is handled by a JS hook in the `mount` with a `push_event`.
   """
   def compress_image(pid, client_name, uuid, screen) do
-    # %{"screenHeight" => h, "screenWidth" => w} = screen
-
     dest_path = build_path(client_name)
-
-    # "/Users/nevendrean/code/elixir/imgup/_build/dev/lib/app/priv/static/image_uploads/Screenshot2023-08-04at210431.png"
+    # "/Users/.../image_uploads/Screenshot2023-08-04at210431.png"
 
     thumb_name = thumb_name(client_name)
-
     # "Screenshot2023-08-04at210431-th.webp"
 
     thumb_path = thumb_name(client_name) |> build_path()
-
-    # "/Users/nevendrean/code/elixir/imgup/_build/dev/lib/app/priv/static/image_uploads/Screenshot2023-08-04at210431-th.webp"
+    # "/Users/.../image_uploads/Screenshot2023-08-04at210431-th.webp"
 
     rename_to_webp = (client_name |> Path.rootname()) <> ".webp"
     # "Screenshot2023-08-04at210431.webp"
 
     resized_name = build_path("resized-" <> rename_to_webp)
-
-    # "/Users/nevendrean/code/elixir/imgup/_build/dev/lib/app/priv/static/image_uploads/resized-Screenshot2023-08-04at210431.webp"
+    # "/Users/.../image_uploads/resized-Screenshot2023-08-04at210431.webp"
 
     with {:ok, img_origin} <- Image.new_from_file(dest_path),
-         scale <- get_scale(img_origin, screen),
+         {:ok, scale} <- get_scale(img_origin, screen),
          {:ok, img_resized} <- Operation.resize(img_origin, scale),
          :ok <- Operation.webpsave(img_resized, resized_name),
          {:ok, img_thumb} <- Operation.thumbnail(dest_path, @thumb_size),
@@ -145,22 +130,28 @@ defmodule AppWeb.ImgupNoClientStLive do
     end
   end
 
+  @doc """
+  Applies a resizing based on the current screen size.
+  """
   def get_scale(img, screen) do
     %{"screenHeight" => h, "screenWidth" => w} = screen
     h_origin = Image.height(img)
     w_origin = Image.width(img)
     hscale = if h < h_origin, do: h / h_origin, else: 1
     wscale = if w < w_origin, do: w / w_origin, else: 1
-    min(hscale, wscale)
+    {:ok, min(hscale, wscale)}
+  rescue
+    _ ->
+      {:error, "Can't read image"}
   end
 
-  # callback from "thumbnailing" operation to update the socket
+  # callback from transformation operation.
   @impl true
   def handle_info({:compressed_error, msg}, socket) do
     {:noreply, put_flash(socket, :error, inspect(msg))}
   end
 
-  # update the socket once the compression is done with the thumbnail path
+  # callback to update the socket once the transformation is done
   @impl true
   def handle_info({:compression_op, thumb_name, resized_name, uuid}, socket) do
     local_images = socket.assigns.uploaded_files_locally
@@ -185,7 +176,8 @@ defmodule AppWeb.ImgupNoClientStLive do
      )}
   end
 
-  # callback from successfull upload to S3 to update the stream and the db
+  # success callback from upload to S3.
+  # update the stream and the db
   @impl true
   def handle_info({:bucket_success, map}, socket) do
     data =
@@ -213,13 +205,13 @@ defmodule AppWeb.ImgupNoClientStLive do
     end
   end
 
-  # callback error upload to S3
+  # error callback from upload to S3
   @impl true
   def handle_info({:upload_error}, socket) do
     {:noreply, put_flash(socket, :error, @error_saving_in_bucket)}
   end
 
-  # callback from successfull deletion from bucket
+  # callback from successfull object deletion from bucket
   @impl true
   def handle_info({:success_deletion_from_bucket, dom_id, uuid}, socket) do
     alias App.Gallery.Url
@@ -259,6 +251,7 @@ defmodule AppWeb.ImgupNoClientStLive do
     {:noreply, put_flash(socket, :error, @error_delete_object_in_bucket)}
   end
 
+  # error callback to "remove_safely" of local files
   @impl true
   def handle_info({:rm_error, msg}, socket) do
     {:noreply, put_flash(socket, :error, msg)}
@@ -272,25 +265,19 @@ defmodule AppWeb.ImgupNoClientStLive do
      |> paginate(socket.assigns.page + 1)}
   end
 
-  # response to the JS hook to capture page size
+  # callback to the JS hook `pushEvent` to capture page size
+  # params are: %{"screenHeight" => h, "screenWidth" => w} = p
   @impl true
-  def handle_event("page-size", p, socket) do
-    # %{"screenHeight" => h, "screenWidth" => w} = p
-    Logger.info(p)
-    {:noreply, assign(socket, :screen, p)}
-  end
+  def handle_event("page-size", p, socket), do: {:noreply, assign(socket, :screen, p)}
 
   @impl true
-  def handle_event("validate", _params, socket) do
-    {:noreply, socket}
-  end
+  def handle_event("validate", _params, socket), do: {:noreply, socket}
 
-  # triggered by the "upload" button
+  # triggered by the "upload" front-end button: file per file
   @impl true
   def handle_event("upload_to_s3", %{"uuid" => uuid}, socket) do
     # Get file element from the local files array
     %{
-      # client_name: client_name,
       resized_name: resized_name,
       client_type: client_type,
       compressed_path: compressed_path,
@@ -321,6 +308,8 @@ defmodule AppWeb.ImgupNoClientStLive do
      |> update(:uploaded_files_locally, fn list -> Enum.filter(list, &(&1.uuid != uuid)) end)}
   end
 
+  # remove objects from bucket, triggered by front-end button
+  @impl true
   def handle_event(
         "delete-uploaded",
         %{"key" => dom_id, "origin" => origin, "thumb" => thumb, "uuid" => uuid},
@@ -404,7 +393,7 @@ defmodule AppWeb.ImgupNoClientStLive do
     |> handle_result(pid, uuid)
 
     pid = self()
-    # cleanup the server
+    # cleanup the files on the server
     [file.path, file_comp.path, build_path(client_name)]
     |> Task.async_stream(&remove_safely(pid, &1))
     |> Stream.run()
@@ -415,6 +404,11 @@ defmodule AppWeb.ImgupNoClientStLive do
   end
 
   # remove the thumbnail from the bucket
+  def handle_result([{:error, msg}, url], pid, uuid) do
+    handle_result([url, {:error, msg}], pid, uuid)
+  end
+
+  # remove the thumbnail from the bucket if not all completed
   def handle_result([url, {:error, msg}], pid, _uuid) do
     Logger.warning("Upload error: " <> inspect(msg))
 
@@ -426,11 +420,7 @@ defmodule AppWeb.ImgupNoClientStLive do
     send(pid, {:upload_error})
   end
 
-  # remove the thumbnail from the bucket
-  def handle_result([{:error, msg}, url], pid, uuid) do
-    handle_result([url, {:error, msg}], pid, uuid)
-  end
-
+  # success path of the upload action
   def handle_result([thumb_url, origin_url], pid, uuid) do
     send(
       pid,

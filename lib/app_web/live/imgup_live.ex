@@ -146,7 +146,6 @@ defmodule AppWeb.ImgupLive do
     ExAws.S3.list_objects(bucket)
     |> ExAws.request!()
     |> get_in([:body, :contents])
-    |> dbg()
     |> Enum.find(&(&1.key == key))
   end
 
