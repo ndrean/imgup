@@ -11,6 +11,7 @@ defmodule App.Application do
       AppWeb.Telemetry,
       App.Repo,
       {Task.Supervisor, name: App.TaskSup},
+      {Task, fn -> shutdown_when_inactive(:timer.minutes(5)) end},
       {Phoenix.PubSub, name: App.PubSub},
       AppWeb.Endpoint
       # Start a worker by calling: App.Worker.start_link(arg)
@@ -29,5 +30,16 @@ defmodule App.Application do
   def config_change(changed, _new, removed) do
     AppWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  # https://fly.io/phoenix-files/shut-down-idle-phoenix-app/
+  defp shutdown_when_inactive(every_ms) do
+    Process.sleep(every_ms)
+
+    if :ranch.procs(AppWeb.Endpoint.HTTP, :connections) == [] do
+      System.stop(0)
+    else
+      shutdown_when_inactive(every_ms)
+    end
   end
 end

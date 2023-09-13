@@ -4,7 +4,8 @@ defmodule App.Repo.Migrations.CreateUrls do
   def change do
     create table(:urls) do
       add :origin_url, :string
-      add :compressed_url, :string
+      add :resized_url, :string
+      add :thumb_url, :string
       add :key, :string
       add :uuid, :uuid
       add :ext, :string

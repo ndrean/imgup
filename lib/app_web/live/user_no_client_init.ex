@@ -16,8 +16,13 @@ defmodule AppWeb.UserNoClientInit do
   # end
 
   def on_mount(:default, _p, %{"user_token" => user_token} = _session, socket) do
-    Logger.info("On mount check #{inspect(user_token)}")
+    Logger.info("On mount check")
     File.mkdir_p(@upload_dir)
+
+    peer_data = get_connect_info(socket, :peer_data)
+    ua = get_connect_info(socket, :user_agent)
+    Logger.info(ua)
+    Logger.info(peer_data)
 
     socket =
       assign_new(socket, :current_user, fn ->

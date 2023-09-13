@@ -2,21 +2,16 @@ defmodule App.Accounts.User do
   @moduledoc false
   use Ecto.Schema
   import Ecto.Changeset
+  alias App.Gallery.Url
 
   schema "users" do
     field :email, :string
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
     field :confirmed_at, :naive_datetime
-    field :img, :binary
-    has_many :urls, App.Gallery.Url
+    has_many :urls, Url
 
     timestamps()
-  end
-
-  def img_changeset(user, attrs) do
-    user
-    |> cast(attrs, [:img])
   end
 
   @doc """

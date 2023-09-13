@@ -37,7 +37,7 @@ defmodule AppWeb.NoClientPreloading do
                   >
                     <img
                       class="block max-w-fit max-h-48 w-auto h-auto flex-none bg-gray-50"
-                      src={file.compressed_url}
+                      src={file.thumb_url}
                       alt="thumbnail"
                     />
                   </.link>
@@ -45,7 +45,7 @@ defmodule AppWeb.NoClientPreloading do
               </div>
             </div>
             <div class="flex items-center justify-end gap-x-6">
-              <.button phx-click="remove-selected" phx-value-key={file.uuid}>
+              <.button phx-click="remove-selected" phx-value-uuid={file.uuid}>
                 <.icon name="hero-trash" class="bg-indigo-600" />
               </.button>
               <button

@@ -1,6 +1,6 @@
 defmodule FileMime do
   @moduledoc """
-  This module retrives information about files using the unix command "file".
+  This module retrieves information about files using the unix command "file".
   It just gives you the files MIME-type in a string representation.
   """
 

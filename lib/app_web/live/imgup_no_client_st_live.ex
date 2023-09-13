@@ -63,33 +63,28 @@ defmodule AppWeb.ImgupNoClientStLive do
   def handle_progress(:image_list, entry, socket) when entry.done? do
     uploaded_file =
       consume_uploaded_entry(socket, entry, fn %{path: path} ->
+        # %{uuid: uuid, client_name: client_name, client_type: client_type} = entry
+
         client_name = clean_name(entry.client_name)
-        dest_path = build_path(client_name)
+
+        entry =
+          entry
+          |> Map.put(:client_name, client_name)
+          |> Map.put(:image_path, build_path(client_name))
+          |> Map.put(:image_url, set_image_url(client_name))
+          |> Map.merge(%{errors: [], thumb_url: nil, thumb_path: nil})
+
         # Copying the file from temporary system folder to static folder
         File.stream!(path, [], 64_000)
-        |> Stream.into(File.stream!(dest_path))
+        |> Stream.into(File.stream!(entry.image_path))
         |> Stream.run()
 
-        # ext = Path.extname(client_name)
-        pid = self()
         screen = socket.assigns.screen
+        pid = self()
 
-        Task.start(fn ->
-          compress_image(pid, client_name, entry.uuid, screen)
-        end)
+        Task.start(fn -> transform_image(pid, entry, screen) end)
 
-        # Adding properties to the entry.
-        # image_url : to render link & img for preload
-
-        updated_map = %{
-          image_url: nil,
-          compressed_url: nil,
-          client_name: client_name,
-          compressed_path: nil,
-          errors: []
-        }
-
-        {:ok, Map.merge(entry, updated_map)}
+        {:ok, entry}
       end)
 
     {:noreply, update(socket, :uploaded_files_locally, &(&1 ++ [uploaded_file]))}
@@ -100,33 +95,47 @@ defmodule AppWeb.ImgupNoClientStLive do
 
   The data `%{"screenHeight" => h, "screenWidth" => w} = screen` is handled by a JS hook in the `mount` with a `push_event`.
   """
-  def compress_image(pid, client_name, uuid, screen) do
-    dest_path = build_path(client_name)
+  def transform_image(pid, entry, screen) do
+    %{client_name: client_name, image_path: image_path} = entry
+
+    # image_path
     # "/Users/.../image_uploads/Screenshot2023-08-04at210431.png"
 
     thumb_name = thumb_name(client_name)
-    # "Screenshot2023-08-04at210431-th.webp"
-
     thumb_path = thumb_name(client_name) |> build_path()
     # "/Users/.../image_uploads/Screenshot2023-08-04at210431-th.webp"
 
-    rename_to_webp = (client_name |> Path.rootname()) <> ".webp"
+    rename_to_webp =
+      if Path.extname(client_name) == ".webp",
+        do: client_name,
+        else: (client_name |> Path.rootname()) <> ".webp"
+
     # "Screenshot2023-08-04at210431.webp"
 
-    resized_name = build_path("resized-" <> rename_to_webp)
+    resized_name = "resized-" <> rename_to_webp
+    resized_path = build_path(resized_name)
     # "/Users/.../image_uploads/resized-Screenshot2023-08-04at210431.webp"
 
-    with {:ok, img_origin} <- Image.new_from_file(dest_path),
+    entry =
+      entry
+      |> Map.merge(%{
+        resized_path: resized_path,
+        resized_name: resized_name,
+        thumb_name: thumb_name,
+        thumb_path: thumb_path
+      })
+
+    with {:ok, img_origin} <- Image.new_from_file(image_path),
          {:ok, scale} <- get_scale(img_origin, screen),
          {:ok, img_resized} <- Operation.resize(img_origin, scale),
-         :ok <- Operation.webpsave(img_resized, resized_name),
-         {:ok, img_thumb} <- Operation.thumbnail(dest_path, @thumb_size),
+         :ok <- Operation.webpsave(img_resized, resized_path),
+         {:ok, img_thumb} <- Operation.thumbnail(image_path, @thumb_size),
          :ok <- Operation.webpsave(img_thumb, thumb_path) do
-      send(pid, {:compression_op, thumb_name, resized_name, uuid})
+      send(pid, {:transform_success, entry})
     else
       {:error, msg} ->
         Logger.warning(msg)
-        send(pid, {:compressed_error, msg})
+        send(pid, {:transform_error, msg})
     end
   end
 
@@ -147,32 +156,31 @@ defmodule AppWeb.ImgupNoClientStLive do
 
   # callback from transformation operation.
   @impl true
-  def handle_info({:compressed_error, msg}, socket) do
+  def handle_info({:transform_error, msg}, socket) do
     {:noreply, put_flash(socket, :error, inspect(msg))}
   end
 
   # callback to update the socket once the transformation is done
   @impl true
-  def handle_info({:compression_op, thumb_name, resized_name, uuid}, socket) do
+  def handle_info({:transform_success, entry}, socket) do
     local_images = socket.assigns.uploaded_files_locally
-    resized_url = resized_name |> Path.basename() |> set_image_url()
 
-    img = find_image(local_images, uuid)
+    img = find_image(local_images, entry.uuid)
 
     img =
       Map.merge(img, %{
-        compressed_path: build_path(thumb_name),
-        compressed_url: set_image_url(thumb_name),
-        image_url: resized_url,
-        resized_name: resized_name,
-        client_type: "image/webp"
+        resized_path: entry.resized_path,
+        resized_url: set_image_url(entry.resized_name),
+        thumb_url: set_image_url(entry.thumb_name),
+        thumb_path: entry.thumb_path,
+        image_path: entry.image_path
       })
 
     {:noreply,
      socket
      |> update(
        :uploaded_files_locally,
-       &find_and_replace(&1, uuid, img)
+       &find_and_replace(&1, entry.uuid, img)
      )}
   end
 
@@ -182,8 +190,8 @@ defmodule AppWeb.ImgupNoClientStLive do
   def handle_info({:bucket_success, map}, socket) do
     data =
       Map.new()
-      |> Map.put(:origin_url, map.origin_url)
-      |> Map.put(:compressed_url, map.compressed_url)
+      |> Map.put(:resized_url, map.resized_url)
+      |> Map.put(:thumb_url, map.thumb_url)
       |> Map.put(:uuid, map.uuid)
 
     new_file =
@@ -200,7 +208,8 @@ defmodule AppWeb.ImgupNoClientStLive do
       {:ok, _} ->
         {:noreply, stream_insert(socket, :uploaded_files_to_S3, new_file)}
 
-      {:error, _msg} ->
+      {:error, msg} ->
+        Logger.warning(msg)
         {:noreply, put_flash(socket, :error, @inserted_in_bucket_but_db_failed)}
     end
   end
@@ -265,6 +274,26 @@ defmodule AppWeb.ImgupNoClientStLive do
      |> paginate(socket.assigns.page + 1)}
   end
 
+  def handle_event("inactivity", _p, socket) do
+    Logger.warning("inactive---------")
+
+    pid = self()
+
+    Task.start(fn ->
+      socket.assigns.uploaded_files_locally
+      |> Enum.each(fn %{
+                        thumb_path: thumb_path,
+                        resized_path: resized_path,
+                        client_name: client_name
+                      } ->
+        [thumb_path, resized_path, build_path(client_name)]
+        |> Enum.each(&remove_safely(pid, &1))
+      end)
+    end)
+
+    {:noreply, push_redirect(socket, to: ~p"/")}
+  end
+
   # callback to the JS hook `pushEvent` to capture page size
   # params are: %{"screenHeight" => h, "screenWidth" => w} = p
   @impl true
@@ -278,30 +307,29 @@ defmodule AppWeb.ImgupNoClientStLive do
   def handle_event("upload_to_s3", %{"uuid" => uuid}, socket) do
     # Get file element from the local files array
     %{
-      resized_name: resized_name,
-      client_type: client_type,
-      compressed_path: compressed_path,
-      uuid: uuid,
-      client_name: client_name
+      image_path: image_path,
+      resized_path: resized_path,
+      thumb_path: thumb_path,
+      uuid: uuid
     } =
       find_image(socket.assigns.uploaded_files_locally, uuid)
 
     # Create 1) original file object and 2) thumbnail/compressed file object to upload
-    file =
+    file_resized =
       %{
-        path: resized_name,
+        path: resized_path,
         content_type: "image/webp"
       }
 
-    file_comp =
+    file_thumb =
       %{
-        path: compressed_path,
-        content_type: client_type
+        path: thumb_path,
+        content_type: "image/webp"
       }
 
     # concurrently upload the 2 files to the bucket
     pid = self()
-    Task.start(fn -> upload(pid, client_name, file, file_comp, uuid) end)
+    Task.start(fn -> upload(pid, image_path, [file_resized, file_thumb], uuid) end)
 
     {:noreply,
      socket
@@ -312,11 +340,11 @@ defmodule AppWeb.ImgupNoClientStLive do
   @impl true
   def handle_event(
         "delete-uploaded",
-        %{"key" => dom_id, "origin" => origin, "thumb" => thumb, "uuid" => uuid},
+        %{"key" => dom_id, "resized" => resized, "thumb" => thumb, "uuid" => uuid},
         socket
       ) do
     pid = self()
-    keys_to_delete = [Path.basename(origin), Path.basename(thumb)]
+    keys_to_delete = [Path.basename(resized), Path.basename(thumb)]
 
     keys_to_delete
     |> Task.async_stream(fn key ->
@@ -346,39 +374,25 @@ defmodule AppWeb.ImgupNoClientStLive do
 
   # rm files from server when unselected
   @impl true
-  def handle_event("remove-selected", %{"key" => uuid}, socket) do
+  def handle_event("remove-selected", %{"uuid" => uuid}, socket) do
     %{
-      compressed_path: comp_path,
+      thumb_path: thumb_path,
       client_name: client_name,
-      resized_name: resized_name
+      resized_path: resized_path
     } =
       socket.assigns.uploaded_files_locally
       |> Enum.find(&(&1.uuid == uuid))
 
-    pid = self()
-
-    [comp_path, resized_name, build_path(client_name)]
-    |> Task.async_stream(&remove_safely(pid, &1))
-    |> Stream.run()
+    handle_remove(self(), [thumb_path, resized_path, build_path(client_name)])
 
     {:noreply,
      socket
      |> update(:uploaded_files_locally, &Enum.filter(&1, fn img -> img.uuid != uuid end))}
   end
 
-  def remove_safely(pid, file) do
-    case File.rm(file) do
-      :ok ->
-        :ok
-
-      {:error, msg} ->
-        send(pid, {:rm_error, msg})
-    end
-  end
-
   # In Task.async_stream, use "on_timeout: :kill_task" to intercept the timeout error
-  def upload(pid, client_name, file, file_comp, uuid) do
-    [file, file_comp]
+  def upload(pid, image_path, files, uuid) do
+    files
     |> Task.async_stream(&App.Upload.upload/1, on_timeout: :kill_task)
     |> Enum.map(&handle_async_result/1)
     |> Enum.reduce([], fn res, acc ->
@@ -392,11 +406,25 @@ defmodule AppWeb.ImgupNoClientStLive do
     end)
     |> handle_result(pid, uuid)
 
-    pid = self()
     # cleanup the files on the server
-    [file.path, file_comp.path, build_path(client_name)]
+    [%{path: p1}, %{path: p2}] = files
+    handle_remove(self(), [image_path, p1, p2])
+  end
+
+  def handle_remove(pid, list) do
+    list
     |> Task.async_stream(&remove_safely(pid, &1))
     |> Stream.run()
+  end
+
+  def remove_safely(pid, file) do
+    case File.rm(file) do
+      :ok ->
+        :ok
+
+      {:error, msg} ->
+        send(pid, {:rm_error, msg})
+    end
   end
 
   def handle_result([{:error, _}, {:error, _}], pid, _uuid) do
@@ -421,10 +449,10 @@ defmodule AppWeb.ImgupNoClientStLive do
   end
 
   # success path of the upload action
-  def handle_result([thumb_url, origin_url], pid, uuid) do
+  def handle_result([thumb_url, resized_url], pid, uuid) do
     send(
       pid,
-      {:bucket_success, %{origin_url: origin_url, compressed_url: thumb_url, uuid: uuid}}
+      {:bucket_success, %{thumb_url: thumb_url, resized_url: resized_url, uuid: uuid}}
     )
   end
 
@@ -455,9 +483,8 @@ defmodule AppWeb.ImgupNoClientStLive do
   end
 
   def clean_name(name) do
-    ext = Path.extname(name)
     rootname = name |> Path.rootname() |> String.replace(" ", "") |> String.replace(".", "")
-    rootname <> ext
+    rootname <> Path.extname(name)
   end
 
   def build_path(name),
