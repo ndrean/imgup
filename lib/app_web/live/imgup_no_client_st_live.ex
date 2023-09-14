@@ -54,8 +54,8 @@ defmodule AppWeb.ImgupNoClientStLive do
   end
 
   # With `auto_upload: true`, we can consume files here
+  # loop while receiving chunks
   def handle_progress(:image_list, entry, socket) when entry.done? == false do
-    # loop while receiving chunks
     {:noreply, socket}
   end
 
@@ -78,10 +78,9 @@ defmodule AppWeb.ImgupNoClientStLive do
         |> Stream.into(File.stream!(entry.image_path))
         |> Stream.run()
 
-        screen = socket.assigns.screen
         pid = self()
 
-        Task.start(fn -> transform_image(pid, entry, screen) end)
+        Task.start(fn -> transform_image(pid, entry, socket.assigns.screen) end)
 
         {:ok, entry}
       end)
@@ -196,6 +195,7 @@ defmodule AppWeb.ImgupNoClientStLive do
       |> Map.put(:uuid, map.uuid)
       |> Map.put(:user_id, current_user.id)
 
+    # streams does not accept a map but accepts an UploadEntry struct
     new_file =
       %Phoenix.LiveView.UploadEntry{}
       |> Map.merge(data)
@@ -514,27 +514,4 @@ end
 #   client_size: 99767,
 #   client_type: "image/png",
 #   client_last_modified: 1686066727004
-# }
-
-# file_element
-# %{
-#   progress: 100,
-#   __struct__: Phoenix.LiveView.UploadEntry,
-#   errors: [],
-#   valid?: true,
-#   ref: "0",
-#   client_size: 2504782,
-#   client_name: "action.jpg",
-#   client_type: "image/jpeg",
-#   uuid: "38809d8d-e080-4f14-a137-13e50cd23c56",
-#   compressed_path: "/Users/nevendrean/code/elixir/imgup/_build/dev/lib/app/priv/static/image_uploads/action-comp.jpg",
-#   done?: true,
-#   image_url: "http://localhost:4000/image_uploads/action.jpg",
-#   compressed_name: "action-comp.jpg",
-#   upload_ref: "phx-F4JGIKN9v6ORWQXC",
-#   preflighted?: true,
-#   upload_config: :image_list,
-#   cancelled?: false,
-#   client_last_modified: 1693731232407,
-#   client_relative_path: ""
 # }

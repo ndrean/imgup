@@ -57,6 +57,8 @@ defmodule App.MixProject do
       {:joken, "~> 2.5"},
       {:floki, ">= 0.30.0", only: :test},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
+      {:phoenix_live_dashboard, "~> 0.7"},
+      {:ecto_psql_extras, "~> 0.6"},
       # Track test coverage: github.com/parroty/excoveralls
       {:excoveralls, "~> 0.15", only: [:test, :dev]},
       {:esbuild, "~> 0.7", runtime: Mix.env() == :dev},

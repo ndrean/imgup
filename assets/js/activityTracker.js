@@ -3,16 +3,16 @@ const ActivityTracker = {
     let pushActivity = (() => {
       let active = true;
       //   delay 1 min
-      const delay = 1 * 60 * 1000;
+      const delay = 10 * 60 * 1000;
+      console.log({ active });
 
       return () => {
-        console.log({ active });
         if (active) {
           active = false;
 
           setTimeout(() => {
             active = true;
-            console.log("inactive");
+
             this.pushEventTo("#" + this.el.id, "inactivity");
           }, delay);
         }
