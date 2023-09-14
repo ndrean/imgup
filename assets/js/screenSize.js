@@ -9,7 +9,7 @@ export default {
         screenWidth: window.innerWidth,
         screenHeight: window.innerHeight,
       });
-      alert(`Screen: w:${window.innerWidth}px, h:${window.innerHeight}px`);
+      // alert(`Screen: w:${window.innerWidth}px, h:${window.innerHeight}px`);
     });
 
     // window.addEventListener("resize", () => {

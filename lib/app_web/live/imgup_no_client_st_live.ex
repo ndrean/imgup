@@ -9,7 +9,6 @@ defmodule AppWeb.ImgupNoClientStLive do
   on_mount AppWeb.UserNoClientInit
   require Logger
 
-  # @upload_dir Application.app_dir(:app, ["priv", "static", "image_uploads"])
   @thumb_size 200
 
   @delete_bucket_and_db "Sucessfully deleted from bucket and database"
@@ -188,18 +187,18 @@ defmodule AppWeb.ImgupNoClientStLive do
   # update the stream and the db
   @impl true
   def handle_info({:bucket_success, map}, socket) do
+    current_user = socket.assigns.current_user
+
     data =
       Map.new()
       |> Map.put(:resized_url, map.resized_url)
       |> Map.put(:thumb_url, map.thumb_url)
       |> Map.put(:uuid, map.uuid)
+      |> Map.put(:user_id, current_user.id)
 
     new_file =
       %Phoenix.LiveView.UploadEntry{}
       |> Map.merge(data)
-
-    current_user = socket.assigns.current_user
-    data = Map.put(data, :user_id, current_user.id)
 
     %Url{}
     |> Url.changeset(data)
@@ -274,6 +273,7 @@ defmodule AppWeb.ImgupNoClientStLive do
      |> paginate(socket.assigns.page + 1)}
   end
 
+  # remove temp files from server if user inactive.
   def handle_event("inactivity", _p, socket) do
     Logger.warning("inactive---------")
 

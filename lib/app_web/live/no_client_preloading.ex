@@ -46,7 +46,7 @@ defmodule AppWeb.NoClientPreloading do
             </div>
             <div class="flex items-center justify-end gap-x-6">
               <.button phx-click="remove-selected" phx-value-uuid={file.uuid}>
-                <.icon name="hero-trash" class="bg-indigo-600" />
+                <.icon name="hero-trash" />
               </.button>
               <button
                 id={"#submit_button-#{file.uuid}"}

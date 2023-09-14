@@ -304,7 +304,7 @@ defmodule AppWeb.ImgupLive do
     }
   end
 
-  def build_uri(), do: "https://#{bucket()}.s3-#{aws_region()}.amazonaws.com"
+  def build_uri, do: "https://#{bucket()}.s3-#{aws_region()}.amazonaws.com"
 end
 
 # "meta" in the "save" handler
